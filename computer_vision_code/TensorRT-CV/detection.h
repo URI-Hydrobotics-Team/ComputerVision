@@ -7,6 +7,7 @@
 #include <opencv2/imgproc.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/cudaarithm.hpp>
+#include <opencv2/core/cuda.hpp>
 #include <iostream>
 #include <fstream>
 #include <chrono>
@@ -21,11 +22,11 @@ class detection{
         detection(ILogger* t, std::vector<std::string> object_classes, int input_size, int output_channel, int output_dim1, int output_dim2, int model_type);
 
         // function to parse onnx model file
-        void convert_onnx();
+        void convert_onnx(std::string onnx_model_path);
 
         // function to build engine file 
         // filename: onnx model file path
-        void build_engine(std::string filename);
+        void build_engine(std::string onnx_file, std::string filename);
 
         // function to load the optimized engine file
         void load_model(std::string engine_path);
@@ -35,12 +36,15 @@ class detection{
 
         // function to do inference on the frame
         void inference(cv::Mat frame);
+        // void inference_async(int buffer_index);
 
         // function to preprocess the frame, converting it to NCHW format for TensorRT to use
         cv::Mat preprocess(cv::Mat frame);
+        // void preprocess_async(int buffer_index, cv::Mat frame);
 
         // function to do postprocess operation on the output tensor
         void postprocess();
+        // void postprocess_async(int buffer_index);
 
         // function to free all GPU memory and objects
         void dec();
@@ -68,6 +72,9 @@ class detection{
         ICudaEngine* engine;
         // CUDA stream used to speed things up and also used for model inference
         cudaStream_t stream;
+        cudaStream_t stream2;
+        // cudaStream_t stream3;
+        // cudaStream_t stream4;
 
         // These are the pointer used to store input and output tensor values if FP32 model is loaded
         float* input_ptr;        
@@ -118,4 +125,26 @@ class detection{
         // GPU matrix 
         cv::cuda::GpuMat output_mat;
         cv::cuda::GpuMat transposed_output_mat;
+        // cv::cuda::GpuMat access_row;
+
+
+        // experimenting things
+        float* boxes;
+        float* conf;
+        int* classes;
+        int* index_count;
+        float* IoU;
+        float* prob; 
+
+        float model_prob;
+        float model_IoU;
+
+        std::vector<int> final_classes;
+        std::vector<float> final_conf;
+        std::vector<float> final_boxes;
+        int num_output;
+
+        cv::Mat cpu_frame;
+        cudaStream_t streams[2];
+        
 };

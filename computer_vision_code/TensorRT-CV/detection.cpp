@@ -297,7 +297,19 @@ cv::Mat detection::preprocess(cv::Mat frame){
 
     // converts frame into NCHW format
     // TODO: Implement a CUDA kernel to do this instead of using the blobFromImage function
-	cv::dnn::blobFromImage(frame, blob, 1.0 / 255.0, cv::Size(input_size, input_size), cv::Scalar(), true, false);
+	// cv::dnn::blobFromImage(frame, blob, 1.0 / 255.0, cv::Size(input_size, input_size), cv::Scalar(), true, false);
+
+    cv::dnn::Image2bBlobParams blob_param;
+    
+    blob_param.datalayout = cv::dnn::DNN_LAYOUT_NCHW;
+    blob_param.ddepth = CV_32F;
+    blob_param.mean = cv::Scalar();
+    blob_param.paddingmode = cv::dnn::DNN_PMODE_LETTERBOX;
+    blob_param.scalefactor = 1.0 / 255.0;
+    blob_param.size = cv::Size(640, 640);
+    blob_param.swapRB = true;
+
+    cv::Mat blob = cv::dnn::blobFromImageWithParams(frame, blob_param);
 
     // std::cout << blob.isContinuous() << "\n";
     return blob;
@@ -431,5 +443,3 @@ void detection::dec(){
     cudaFree(input_ptr);
     cudaFree(output_ptr);
 }
-
-

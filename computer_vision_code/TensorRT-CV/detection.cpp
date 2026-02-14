@@ -1,5 +1,4 @@
 #include "detection.h"
-#include <opencv2/dnn/dnn.hpp>
 
 detection::detection(ILogger* t, std::vector<std::string> object_classes, int input_size, int output_channel, int output_dim1, int output_dim2, int model_type){
     count = 0;
@@ -20,6 +19,8 @@ detection::detection(ILogger* t, std::vector<std::string> object_classes, int in
     // Create the cuda streams
     cudaStreamCreate(&stream);
     cudaStreamCreate(&stream2);
+    streams[0] = stream;
+    streams[1] = stream2;
 
     // if fp16 model is used, do float16 specific operations
     if(model_type == 16){
@@ -322,6 +323,27 @@ cv::Mat detection::preprocess(cv::Mat frame){
 
     // std::cout << blob.isContinuous() << "\n";
     return blob;
+}
+
+void detection::preprocess_async(int buffer_index, cv::Mat frame){
+    cv::Mat blob;
+
+    // parameters for preprocessing the frame
+    cv::dnn::Image2BlobParams blob_param;
+    
+    blob_param.datalayout = cv::dnn::DNN_LAYOUT_NCHW;
+    blob_param.ddepth = CV_32F;
+    blob_param.mean = cv::Scalar();
+    blob_param.paddingmode = cv::dnn::DNN_PMODE_LETTERBOX;
+    blob_param.scalefactor = 1.0 / 255.0;
+    blob_param.size = cv::Size(640, 640);
+    blob_param.swapRB = true;
+
+    // preprocess the frame based on the parameters
+    blob = cv::dnn::blobFromImageWithParams(frame, blob_param);
+
+    // upload the preprocessed frame to GPU
+    cudaMemcpyAsync(double_buffer[buffer_index], blob.data, blob.total() * blob.elemSize(), cudaMemcpyHostToDevice, streams[buffer_index]);
 }
 
 void detection::inference(cv::Mat frame){

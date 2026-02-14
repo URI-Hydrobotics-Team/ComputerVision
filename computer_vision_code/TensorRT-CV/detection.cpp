@@ -1,4 +1,5 @@
 #include "detection.h"
+#include <opencv2/dnn/dnn.hpp>
 
 detection::detection(ILogger* t, std::vector<std::string> object_classes, int input_size, int output_channel, int output_dim1, int output_dim2, int model_type){
     count = 0;
@@ -11,6 +12,10 @@ detection::detection(ILogger* t, std::vector<std::string> object_classes, int in
     this->output_dim1 = output_dim1;
     this->output_dim2 = output_dim2;
     this->object_classes = object_classes;
+    static buffer buf1;
+    static buffer buf2;
+    double_buffer[0] = buf1;
+    double_buffer[1] = buf2;
     
     // Create the cuda streams
     cudaStreamCreate(&stream);
@@ -36,11 +41,15 @@ detection::detection(ILogger* t, std::vector<std::string> object_classes, int in
         data_size = sizeof(float);
         num_output = 0;
         // allocate gpu memory for input and output tensor
-        cudaMalloc((void **)&input_ptr, 3 * input_size * input_size * data_size);
-        cudaMalloc((void **)&boxes, 30 * 4 * data_size);
-        cudaMalloc((void **)&conf, 30 * data_size);
-        cudaMalloc((void **)&classes, 30 * sizeof(int));
-        cudaMalloc((void **)&index_count, sizeof(int));
+
+        for(buffer buf : double_buffer) {
+            cudaMalloc((void **)&buf.input_pointer, 3 * input_size * input_size * data_size);
+            cudaMalloc((void **)&buf.box_pointer, 30 * 4 * data_size);
+            cudaMalloc((void **)&buf.confidence_pointer, 30 * data_size);
+            cudaMalloc((void **)&buf.class_indicies_pointer, 30 * sizeof(int));
+            cudaMalloc((void **)&buf.count, sizeof(int));
+        }
+        
         cudaMalloc((void **)&prob, data_size);
         cudaMalloc((void **)&IoU, data_size);
 
@@ -299,7 +308,7 @@ cv::Mat detection::preprocess(cv::Mat frame){
     // TODO: Implement a CUDA kernel to do this instead of using the blobFromImage function
 	// cv::dnn::blobFromImage(frame, blob, 1.0 / 255.0, cv::Size(input_size, input_size), cv::Scalar(), true, false);
 
-    cv::dnn::Image2bBlobParams blob_param;
+    cv::dnn::Image2BlobParams blob_param;
     
     blob_param.datalayout = cv::dnn::DNN_LAYOUT_NCHW;
     blob_param.ddepth = CV_32F;
@@ -309,7 +318,7 @@ cv::Mat detection::preprocess(cv::Mat frame){
     blob_param.size = cv::Size(640, 640);
     blob_param.swapRB = true;
 
-    cv::Mat blob = cv::dnn::blobFromImageWithParams(frame, blob_param);
+    blob = cv::dnn::blobFromImageWithParams(frame, blob_param);
 
     // std::cout << blob.isContinuous() << "\n";
     return blob;

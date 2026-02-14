@@ -3,8 +3,8 @@
 #include <NvOnnxParser.h>
 #include <cuda_runtime.h>
 #include <vector>
+// #include <opencv2/dnn/dnn.hpp>
 #include <opencv2/dnn.hpp>
-#include <opencv2/dnn/dnn.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/cudaarithm.hpp>
@@ -37,20 +37,46 @@ class detection{
 
         // function to do inference on the frame
         void inference(cv::Mat frame);
-        // void inference_async(int buffer_index);
+        void inference_async(int buffer_index);
 
         // function to preprocess the frame, converting it to NCHW format for TensorRT to use
         cv::Mat preprocess(cv::Mat frame);
-        // void preprocess_async(int buffer_index, cv::Mat frame);
+        void preprocess_async(int buffer_index, cv::Mat frame);
 
         // function to do postprocess operation on the output tensor
         void postprocess();
-        // void postprocess_async(int buffer_index);
+        void postprocess_async(int buffer_index);
 
         // function to free all GPU memory and objects
         void dec();
 
     private:
+        struct buffer
+        {
+            float* input_pointer;
+            float* box_pointer;
+            float* confidence_pointer;
+            int* count;
+            int* class_indicies_pointer;
+
+            buffer(): input_pointer(nullptr), box_pointer(nullptr), confidence_pointer(nullptr), count(nullptr), class_indicies_pointer(nullptr) {}
+
+            ~buffer() {
+                if(box_pointer) {
+                    cudaFree(box_pointer);
+                }
+                if(confidence_pointer) {
+                    cudaFree(confidence_pointer);
+                }
+                if(count){
+                    cudaFree(count);
+                }
+                if(class_indicies_pointer) {
+                    cudaFree(class_indicies_pointer);
+                }
+            }
+        };
+
         // Used to capture errors
         ILogger* logger;
         // model path of the onnx model
@@ -147,5 +173,5 @@ class detection{
 
         cv::Mat cpu_frame;
         cudaStream_t streams[2];
-        
+        buffer double_buffer[2];
 };

@@ -3,7 +3,6 @@
 #include <NvOnnxParser.h>
 #include <cuda_runtime.h>
 #include <vector>
-// #include <opencv2/dnn/dnn.hpp>
 #include <opencv2/dnn.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/highgui.hpp>
@@ -21,6 +20,7 @@ class detection{
         // constructor, take in the logger object, input and output size
         // model_type is int either 32 or 16 representing FP16 or FP32 models
         detection(ILogger* t, std::vector<std::string> object_classes, int input_size, int output_channel, int output_dim1, int output_dim2, int model_type);
+        ~detection();
 
         // function to parse onnx model file
         void convert_onnx(std::string onnx_model_path);
@@ -51,28 +51,30 @@ class detection{
         void dec();
 
     private:
-        struct buffer
-        {
+        struct buffers {
             float* input_pointer;
-            float* box_pointer;
-            float* confidence_pointer;
-            int* count;
-            int* class_indicies_pointer;
+            int* counts;
+            int* classes;
+            float* boxes_output;
+            float* conf_output;
 
-            buffer(): input_pointer(nullptr), box_pointer(nullptr), confidence_pointer(nullptr), count(nullptr), class_indicies_pointer(nullptr) {}
+            buffers(): input_pointer(nullptr), counts(nullptr), classes(nullptr), boxes_output(nullptr), conf_output(nullptr) {}
 
-            ~buffer() {
-                if(box_pointer) {
-                    cudaFree(box_pointer);
+            ~buffers() {
+                if(input_pointer) {
+                    cudaFree(input_pointer);
                 }
-                if(confidence_pointer) {
-                    cudaFree(confidence_pointer);
+                if(counts) { 
+                    cudaFree(counts); 
                 }
-                if(count){
-                    cudaFree(count);
+                if(classes) {
+                    cudaFree(classes);
                 }
-                if(class_indicies_pointer) {
-                    cudaFree(class_indicies_pointer);
+                if(boxes_output){
+                    cudaFree(boxes_output);
+                }
+                if(conf_output){
+                    cudaFree(conf_output);
                 }
             }
         };
@@ -99,6 +101,7 @@ class detection{
         ICudaEngine* engine;
         // CUDA stream used to speed things up and also used for model inference
         cudaStream_t stream;
+        cudaStream_t stream1;
         cudaStream_t stream2;
         // cudaStream_t stream3;
         // cudaStream_t stream4;
@@ -166,12 +169,20 @@ class detection{
         float model_prob;
         float model_IoU;
 
-        std::vector<int> final_classes;
-        std::vector<float> final_conf;
-        std::vector<float> final_boxes;
-        int num_output;
+        std::vector<std::vector<int>> final_classes;
+        std::vector<std::vector<float>> final_conf;
+        std::vector<std::vector<float>> final_boxes;
+        int num_output[2];
 
         cv::Mat cpu_frame;
         cudaStream_t streams[2];
-        buffer double_buffer[2];
+        buffers double_buffer[2];
+        IExecutionContext *contexts[2];
+
+        // Below variables are used for without double buffer
+        // Used to warm up GPU
+        std::vector<int> final_classes1;
+        std::vector<float> final_conf1;
+        std::vector<float> final_boxes1;
+        int num_output1;
 };

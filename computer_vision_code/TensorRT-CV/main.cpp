@@ -1,4 +1,5 @@
 #include "detection.h"
+#include <chrono>
 
 class Logger : public ILogger
 {
@@ -20,22 +21,37 @@ int main(){
     // This line is used to build an engine file
     // model.build_engine("onnx model path", "engine model destination path");
 
-    model.load_model("engine model path");
+    model.load_model("engine path");
 
     cv::VideoCapture camera;
 
     // Warm up to initialize GPU memory, allocation, and the model
-    cv::Mat frame = cv::imread("testing image");
+    cv::Mat frame = cv::imread("image");
 
-    for(int i = 0; i < 10; i++) {
+    for(int i = 0; i < 100; i++) {
         model.inference(frame);
     }
+
+    int cur_index = 0;
+    model.preprocess_async(cur_index, frame);
+    model.inference_async(cur_index);
+
+    auto start = std::chrono::high_resolution_clock::now();
 
     for(int i = 0; i < 10000; i++){
-        std::cout << i << ": ";
-        model.inference(frame);
+        // std::cout << i << "\n";
+        cur_index = !cur_index;
+        model.preprocess_async(cur_index, frame);
+        model.inference_async(cur_index);
+        model.postprocess_async(!cur_index);
     }
 
+    model.postprocess_async(!cur_index);
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::seconds>(end - start);
+
+    std::cout << "Average inference fps is: " << 10000 / duration.count() << "\n";
     // // // cv::Mat frame;
     // // // camera.open(0);
 

@@ -11,15 +11,12 @@ detection::detection(ILogger* t, std::vector<std::string> object_classes, int in
     this->output_dim1 = output_dim1;
     this->output_dim2 = output_dim2;
     this->object_classes = object_classes;
-    static buffer buf1;
-    static buffer buf2;
-    double_buffer[0] = buf1;
-    double_buffer[1] = buf2;
     
     // Create the cuda streams
     cudaStreamCreate(&stream);
+    cudaStreamCreate(&stream1);
     cudaStreamCreate(&stream2);
-    streams[0] = stream;
+    streams[0] = stream1;
     streams[1] = stream2;
 
     // if fp16 model is used, do float16 specific operations
@@ -40,15 +37,21 @@ detection::detection(ILogger* t, std::vector<std::string> object_classes, int in
     else{
         // data size here is 4 bytes for float32
         data_size = sizeof(float);
-        num_output = 0;
-        // allocate gpu memory for input and output tensor
+        cudaMalloc((void **)&input_ptr, 3 * input_size * input_size * data_size);
+        cudaMalloc((void **)&boxes, 30 * 4 * data_size);
+        cudaMalloc((void **)&conf, 30 * data_size);
+        cudaMalloc((void **)&classes, 30 * sizeof(int));
+        cudaMalloc((void **)&index_count, sizeof(int));
+        cudaMalloc((void **)&prob, data_size);
+        cudaMalloc((void **)&IoU, data_size);
 
-        for(buffer buf : double_buffer) {
+        // allocate gpu memory for input and output tensor
+        for(buffers& buf : double_buffer) {
             cudaMalloc((void **)&buf.input_pointer, 3 * input_size * input_size * data_size);
-            cudaMalloc((void **)&buf.box_pointer, 30 * 4 * data_size);
-            cudaMalloc((void **)&buf.confidence_pointer, 30 * data_size);
-            cudaMalloc((void **)&buf.class_indicies_pointer, 30 * sizeof(int));
-            cudaMalloc((void **)&buf.count, sizeof(int));
+            cudaMalloc((void **)&buf.boxes_output, 30 * 4 * data_size);
+            cudaMalloc((void **)&buf.conf_output, 30 * data_size);
+            cudaMalloc((void **)&buf.classes, 30 * sizeof(int));
+            cudaMalloc((void **)&buf.counts, sizeof(int));
         }
         
         cudaMalloc((void **)&prob, data_size);
@@ -60,12 +63,46 @@ detection::detection(ILogger* t, std::vector<std::string> object_classes, int in
         cudaMemcpy(prob, &model_prob, sizeof(float), cudaMemcpyHostToDevice);
         cudaMemcpy(IoU, &model_IoU, sizeof(float), cudaMemcpyHostToDevice);
 
-        final_classes.resize(30);
-        final_boxes.resize(30 * 4);
-        final_conf.resize(30);
-        cv::cuda::HostMem pinned_host_mem(1 * 3 * 640 * 640 * sizeof(float), cv::cuda::HostMem::AllocType::PAGE_LOCKED);
-        some = pinned_host_mem.createMatHeader();
+        final_classes.resize(2);
+        final_boxes.resize(2);
+        final_conf.resize(2);
+
+        final_classes[0].resize(30);
+        final_boxes[0].resize(30 * 4);
+        final_conf[0].resize(30);
+
+        final_classes[1].resize(30);
+        final_boxes[1].resize(30 * 4);
+        final_conf[1].resize(30);
+
+        num_output[0] = 0;
+        num_output[1] = 0;
+
+        final_classes1.resize(30);
+        final_boxes1.resize(30 * 4);
+        final_conf1.resize(30);
     }
+}
+
+detection::~detection() {
+    cudaStreamDestroy(streams[0]);
+    cudaStreamDestroy(streams[1]);
+
+    for(buffers buf : double_buffer) {
+        cudaFree(buf.input_pointer);
+        cudaFree(buf.boxes_output);
+        cudaFree(buf.conf_output);
+        cudaFree(buf.classes);
+        cudaFree(buf.counts);
+    }
+
+    cudaFree(prob);
+    cudaFree(IoU);
+
+    delete context;
+    delete contexts[0];
+    delete contexts[1];
+    delete engine;
 }
 
 void detection::convert_onnx(std::string onnx_model_path){
@@ -298,7 +335,10 @@ void detection::load_model(std::string engine_path){
 
     // deserialize the engine data
     engine = runtime->deserializeCudaEngine(modelData.data(), modelData.size());
+
     context = engine->createExecutionContext();
+    contexts[0] = engine->createExecutionContext();
+    contexts[1] = engine->createExecutionContext();
 }
 
 cv::Mat detection::preprocess(cv::Mat frame){
@@ -326,6 +366,11 @@ cv::Mat detection::preprocess(cv::Mat frame){
 }
 
 void detection::preprocess_async(int buffer_index, cv::Mat frame){
+    x_scale = frame.cols / float(input_size);
+    y_scale = frame.rows / float(input_size);
+    center_x = frame.cols / 2.0;
+    center_y = frame.rows / 2.0;
+
     cv::Mat blob;
 
     // parameters for preprocessing the frame
@@ -343,25 +388,18 @@ void detection::preprocess_async(int buffer_index, cv::Mat frame){
     blob = cv::dnn::blobFromImageWithParams(frame, blob_param);
 
     // upload the preprocessed frame to GPU
-    cudaMemcpyAsync(double_buffer[buffer_index], blob.data, blob.total() * blob.elemSize(), cudaMemcpyHostToDevice, streams[buffer_index]);
+    cudaMemcpyAsync(double_buffer[buffer_index].input_pointer, blob.data, blob.total() * blob.elemSize(), cudaMemcpyHostToDevice, streams[buffer_index]);
 }
 
 void detection::inference(cv::Mat frame){
-    auto start = std::chrono::high_resolution_clock::now();
-
     x_scale = frame.cols / float(input_size);
     y_scale = frame.rows / float(input_size);
     center_x = frame.cols / 2.0;
     center_y = frame.rows / 2.0;
 
     // preprocess the frame before inference
-    // auto start0 = std::chrono::high_resolution_clock::now();
     input = preprocess(frame);
-    // auto stop0 = std::chrono::high_resolution_clock::now();
-    // std::chrono::duration<double> duration0 = stop0 - start0;
-    // std::cout << "pre: " << duration0.count() << "\n";
 
-    // auto start1 = std::chrono::high_resolution_clock::now();
     // if the model is a fp16 model, convert frame to FP16 data type
     if(data_size == 2){
         input.convertTo(some, CV_16F);
@@ -382,10 +420,6 @@ void detection::inference(cv::Mat frame){
         context->setTensorAddress("class", classes);
     }
 
-    // auto memcpy_stop = std::chrono::high_resolution_clock::now();
-    // std::chrono::duration<double> cpy_duration = memcpy_stop - start1;
-    // std::cout << "cpy time: " << cpy_duration.count() << "\n";
-    
     // some assertion to make sure things go correctly
     assert(some.data != nullptr);
     assert(3 * input_size * input_size * data_size == some.total() * some.elemSize());
@@ -396,51 +430,42 @@ void detection::inference(cv::Mat frame){
 
     // perform inference
     context->enqueueV3(stream);
-    
-    // wait for the stream to complete
-    
-    // auto stop1 = std::chrono::high_resolution_clock::now();
-    // std::chrono::duration<double> duration1 = stop1 - start1;
-    // std::cout << "mid: " << duration1.count() << "\n";
 
     // post process the result
-    // auto start2 = std::chrono::high_resolution_clock::now();
     postprocess();
-    // auto stop2 = std::chrono::high_resolution_clock::now();
-    // std::chrono::duration<double> duration2 = stop2 - start2;
-    // std::cout << "post: " << duration2.count() << "\n";
+}
 
-    // auto stop = std::chrono::high_resolution_clock::now();
-    // std::chrono::duration<double> duration = stop - start;
+void detection::inference_async(int buffer_index) {
+    contexts[buffer_index]->setTensorAddress("images", double_buffer[buffer_index].input_pointer);
+    contexts[buffer_index]->setTensorAddress("confidence", prob);
+    contexts[buffer_index]->setTensorAddress("IoU", IoU);
+    contexts[buffer_index]->setTensorAddress("confidences", double_buffer[buffer_index].conf_output);
+    contexts[buffer_index]->setTensorAddress("box", double_buffer[buffer_index].boxes_output);
+    contexts[buffer_index]->setTensorAddress("counts", double_buffer[buffer_index].counts);
+    contexts[buffer_index]->setTensorAddress("class", double_buffer[buffer_index].classes);
 
-    // count1++;
-
-    // if(count1 > 9){
-    //     count++;
-    //     time += duration.count();
-    //     std::cout << "detection time: " << time / count << "\n";
-    // }
+    contexts[buffer_index]->enqueueV3(streams[buffer_index]);
 }
 
 
 void detection::postprocess() {
-    cudaError err1 = cudaMemcpyAsync(final_classes.data(), classes, 30 * sizeof(int), cudaMemcpyDeviceToHost, stream);
+    cudaError err1 = cudaMemcpyAsync(final_classes1.data(), classes, 30 * sizeof(int), cudaMemcpyDeviceToHost, stream);
 
     if(err1 != cudaSuccess) {
         std::cout << "cuda 1 failed";
     }
 
-    cudaError err2 = cudaMemcpyAsync(final_conf.data(), conf, 30 * sizeof(float), cudaMemcpyDeviceToHost, stream);
+    cudaError err2 = cudaMemcpyAsync(final_conf1.data(), conf, 30 * sizeof(float), cudaMemcpyDeviceToHost, stream);
     if(err2 != cudaSuccess) {
         std::cout << "cuda 2 failed";
     }
 
-    cudaError err3 = cudaMemcpyAsync(final_boxes.data(), boxes, 30 * 4 * sizeof(float), cudaMemcpyDeviceToHost, stream);
+    cudaError err3 = cudaMemcpyAsync(final_boxes1.data(), boxes, 30 * 4 * sizeof(float), cudaMemcpyDeviceToHost, stream);
     if(err3 != cudaSuccess) {
         std::cout << "cuda 3 failed";
     }
 
-    cudaError err4 = cudaMemcpyAsync(&num_output, index_count, sizeof(int), cudaMemcpyDeviceToHost, stream);
+    cudaError err4 = cudaMemcpyAsync(&num_output1, index_count, sizeof(int), cudaMemcpyDeviceToHost, stream);
     if(err4 != cudaSuccess) {
         std::cout << "cuda 4 failed";
     }
@@ -448,16 +473,61 @@ void detection::postprocess() {
     // std::cout << "count: " << num_output << "\n";
     cudaStreamSynchronize(stream);
 
-    for(int i = 0; i < num_output; i++) {
-        float x = final_boxes[i * 4], y = final_boxes[i * 4 + 1], width = final_boxes[i * 4 + 2], height = final_boxes[i * 4 + 3];
+    for(int i = 0; i < num_output1; i++) {
+        float x = final_boxes1[i * 4], y = final_boxes1[i * 4 + 1], width = final_boxes1[i * 4 + 2], height = final_boxes1[i * 4 + 3];
         cv::Rect2d bounds = cv::Rect2d((x - (width / 2)) * x_scale, (y - (height / 2)) * y_scale, width * x_scale, height * y_scale);
         
-        max_conf = final_conf[i];
+        max_conf = final_conf1[i];
 
-        int id = final_classes[i];
+        int id = final_classes1[i];
         std::string object = object_classes[id];
 
-        std::cout << "Object: " << object << " | " << "X offset: " << (bounds.x + bounds.width / 2) - center_x << " | " << "Y offset: " << center_y - (bounds.y + bounds.height / 2) << "\n";
+        // std::cout << "Object: " << object << " | " << "X offset: " << (bounds.x + bounds.width / 2) - center_x << " | " << "Y offset: " << center_y - (bounds.y + bounds.height / 2) << "\n";
+
+        // cv::rectangle(cpu_frame, bounds, cv::Scalar(0, 0, 0), 3); // Draw the bounding box
+        // std::string info = object + ": ";
+        // info += std::to_string(max_conf);
+        // cv::putText(cpu_frame, info, cv::Point(bounds.x, bounds.y), cv::FONT_HERSHEY_SIMPLEX, 0.25, cv::Scalar(0, 255, 255)); // Put text 
+        
+        // cv::imshow("Pic", cpu_frame);
+        // cv::waitKey(10);
+    }
+}
+
+void detection::postprocess_async(int buffer_index) {
+    cudaError err1 = cudaMemcpyAsync(final_classes[buffer_index].data(), double_buffer[buffer_index].classes, 30 * sizeof(int), cudaMemcpyDeviceToHost, streams[buffer_index]);
+    if(err1 != cudaSuccess) {
+        std::cout << "cuda 1 failed";
+    }
+
+    cudaError err2 = cudaMemcpyAsync(final_conf[buffer_index].data(), double_buffer[buffer_index].conf_output, 30 * sizeof(float), cudaMemcpyDeviceToHost, streams[buffer_index]);
+    if(err2 != cudaSuccess) {
+        std::cout << "cuda 2 failed";
+    }
+
+    cudaError err3 = cudaMemcpyAsync(final_boxes[buffer_index].data(), double_buffer[buffer_index].boxes_output, 30 * 4 * sizeof(float), cudaMemcpyDeviceToHost, streams[buffer_index]);
+    if(err3 != cudaSuccess) {
+        std::cout << "cuda 3 failed";
+    }
+
+    cudaError err4 = cudaMemcpyAsync(&(num_output[buffer_index]), double_buffer[buffer_index].counts, sizeof(int), cudaMemcpyDeviceToHost, streams[buffer_index]);
+    if(err4 != cudaSuccess) {
+        std::cout << "cuda 4 failed";
+    }
+
+    // std::cout << "count: " << num_output << "\n";
+    cudaStreamSynchronize(streams[buffer_index]);
+
+    for(int i = 0; i < num_output[buffer_index]; i++) {
+        float x = final_boxes[buffer_index][i * 4], y = final_boxes[buffer_index][i * 4 + 1], width = final_boxes[buffer_index][i * 4 + 2], height = final_boxes[buffer_index][i * 4 + 3];
+        cv::Rect2d bounds = cv::Rect2d((x - (width / 2)) * x_scale, (y - (height / 2)) * y_scale, width * x_scale, height * y_scale);
+        
+        max_conf = final_conf[buffer_index][i];
+
+        int id = final_classes[buffer_index][i];
+        std::string object = object_classes[id];
+
+        // std::cout << "Object: " << object << " | " << "X offset: " << (bounds.x + bounds.width / 2) - center_x << " | " << "Y offset: " << center_y - (bounds.y + bounds.height / 2) << "\n";
 
         // cv::rectangle(cpu_frame, bounds, cv::Scalar(0, 0, 0), 3); // Draw the bounding box
         // std::string info = object + ": ";

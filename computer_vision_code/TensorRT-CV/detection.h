@@ -57,8 +57,9 @@ class detection{
             int* classes;
             float* boxes_output;
             float* conf_output;
+            float* testing_output;
 
-            buffers(): input_pointer(nullptr), counts(nullptr), classes(nullptr), boxes_output(nullptr), conf_output(nullptr) {}
+            buffers(): input_pointer(nullptr), counts(nullptr), classes(nullptr), boxes_output(nullptr), conf_output(nullptr), testing_output(nullptr) {}
 
             ~buffers() {
                 if(input_pointer) {
@@ -74,6 +75,9 @@ class detection{
                     cudaFree(boxes_output);
                 }
                 if(conf_output){
+                    cudaFree(conf_output);
+                }
+                if(testing_output) {
                     cudaFree(conf_output);
                 }
             }
@@ -172,6 +176,7 @@ class detection{
         std::vector<std::vector<int>> final_classes;
         std::vector<std::vector<float>> final_conf;
         std::vector<std::vector<float>> final_boxes;
+        std::vector<std::vector<float>> final_boxes_test;
         int num_output[2];
 
         cv::Mat cpu_frame;

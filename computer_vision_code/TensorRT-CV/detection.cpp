@@ -52,6 +52,7 @@ detection::detection(ILogger* t, std::vector<std::string> object_classes, int in
             cudaMalloc((void **)&buf.conf_output, 30 * data_size);
             cudaMalloc((void **)&buf.classes, 30 * sizeof(int));
             cudaMalloc((void **)&buf.counts, sizeof(int));
+            cudaMalloc((void **)&buf.testing_output, 8400 * 4 * sizeof(float));
         }
         
         cudaMalloc((void **)&prob, data_size);
@@ -66,14 +67,17 @@ detection::detection(ILogger* t, std::vector<std::string> object_classes, int in
         final_classes.resize(2);
         final_boxes.resize(2);
         final_conf.resize(2);
+        final_boxes_test.resize(2);
 
         final_classes[0].resize(30);
         final_boxes[0].resize(30 * 4);
         final_conf[0].resize(30);
+        final_boxes_test[0].resize(8400 * 4);
 
         final_classes[1].resize(30);
         final_boxes[1].resize(30 * 4);
         final_conf[1].resize(30);
+        final_boxes_test[1].resize(8400 * 4);
 
         num_output[0] = 0;
         num_output[1] = 0;
@@ -99,10 +103,21 @@ detection::~detection() {
     cudaFree(prob);
     cudaFree(IoU);
 
-    delete context;
-    delete contexts[0];
-    delete contexts[1];
-    delete engine;
+    // if(context) {
+    //     delete context;
+    // }
+
+    // if(contexts[0]) {
+    //     delete contexts[0];
+    // }
+
+    // if(contexts[1]) {
+    //     delete contexts[1];
+    // }
+
+    // if(engine) {
+    //     delete engine;
+    // }
 }
 
 void detection::convert_onnx(std::string onnx_model_path){
@@ -139,6 +154,14 @@ void detection::convert_onnx(std::string onnx_model_path){
     auto bounding_boxes = network->addSlice(*transposed, Dims3{0, 0, 0}, Dims3{1, output_dim2, 4}, Dims3{1, 1, 1});
     ITensor* box_init = bounding_boxes->getOutput(0);
     std::cout << "All box obtained\n";
+
+    auto box_init_out = box_init->getDimensions();
+    std::cout << "Box_init dim: " << box_init_out.nbDims << "\n";
+    for(int i = 0; i < box_init_out.nbDims; i++){
+        std::cout << box_init_out.d[i] << " ";
+    }
+
+    std::cout << "\n";
 
     int num = 10;
     Weights num_per_class{DataType::kINT32, &num, 1};
@@ -178,9 +201,22 @@ void detection::convert_onnx(std::string onnx_model_path){
     ITensor* box_counts = nms_layer->getOutput(1);
     std::cout << "Valid coordinates and counts obtained\n";
 
+    // pad the output to always be at least 30 element
+    // to prevent negative row dimensions
+    int dummy[90] = {0};
+    Weights dummy_vals{DataType::kINT32, dummy, 90};
+
+    IConstantLayer* dummy_layer = network->addConstant(Dims2{30, 3}, dummy_vals);
+    ITensor* dummy_output = dummy_layer->getOutput(0);
+
+    ITensor* concat_val[] = {final_bounding_boxes, dummy_output};
+    IConcatenationLayer* concat = network->addConcatenation(concat_val, 2);
+    concat->setAxis(0);
+    ITensor* safe_output = concat->getOutput(0);
+
     // change it such that the nms output indicies are always 30 elements
     // by filling in values
-    ISliceLayer* correct_index_layer = network->addSlice(*final_bounding_boxes, Dims2{0, 0}, Dims2{30, 3}, Dims2{1, 1});
+    ISliceLayer* correct_index_layer = network->addSlice(*safe_output, Dims2{0, 0}, Dims2{30, 3}, Dims2{1, 1});
     correct_index_layer->setMode(SampleMode::kFILL);
     ITensor* corrected_index_shape = correct_index_layer->getOutput(0);
 
@@ -246,12 +282,14 @@ void detection::convert_onnx(std::string onnx_model_path){
     box_final->setName("box");
     box_counts->setName("counts");
     valid_class->setName("class");
+    box_init->setName("box_test");
 
     // add the new outputs to the model
     network->markOutput(*box_final);
     network->markOutput(*conf_final);
     network->markOutput(*valid_class);
     network->markOutput(*box_counts);
+    network->markOutput(*box_init);
 
     std::cout << "Model conversion successful\n";
 }
@@ -443,6 +481,7 @@ void detection::inference_async(int buffer_index) {
     contexts[buffer_index]->setTensorAddress("box", double_buffer[buffer_index].boxes_output);
     contexts[buffer_index]->setTensorAddress("counts", double_buffer[buffer_index].counts);
     contexts[buffer_index]->setTensorAddress("class", double_buffer[buffer_index].classes);
+    contexts[buffer_index]->setTensorAddress("box_test", double_buffer[buffer_index].testing_output);
 
     contexts[buffer_index]->enqueueV3(streams[buffer_index]);
 }
@@ -482,7 +521,7 @@ void detection::postprocess() {
         int id = final_classes1[i];
         std::string object = object_classes[id];
 
-        // std::cout << "Object: " << object << " | " << "X offset: " << (bounds.x + bounds.width / 2) - center_x << " | " << "Y offset: " << center_y - (bounds.y + bounds.height / 2) << "\n";
+        std::cout << "Object: " << object << " | " << "X offset: " << (bounds.x + bounds.width / 2) - center_x << " | " << "Y offset: " << center_y - (bounds.y + bounds.height / 2) << "\n";
 
         // cv::rectangle(cpu_frame, bounds, cv::Scalar(0, 0, 0), 3); // Draw the bounding box
         // std::string info = object + ": ";
@@ -515,8 +554,20 @@ void detection::postprocess_async(int buffer_index) {
         std::cout << "cuda 4 failed";
     }
 
+    cudaError err5 = cudaMemcpyAsync(final_boxes_test[buffer_index].data(), double_buffer[buffer_index].testing_output, 8400 * 4 * sizeof(float), cudaMemcpyDeviceToHost, streams[buffer_index]);
+    if(err5 != cudaSuccess) {
+        std::cout << "cuda 5 failed";
+    }
+
     // std::cout << "count: " << num_output << "\n";
     cudaStreamSynchronize(streams[buffer_index]);
+
+
+    // only for testing purpose
+    for(int i = 0; i < 8400; i++) {
+        std::cout << "x: " << final_boxes_test[buffer_index][i * 4] << " y: " << final_boxes_test[buffer_index][i * 4 + 1] 
+        << " w: " << final_boxes_test[buffer_index][i * 4 + 2] << " h: " << final_boxes_test[buffer_index][i * 4 + 3] << "\n";
+    }
 
     for(int i = 0; i < num_output[buffer_index]; i++) {
         float x = final_boxes[buffer_index][i * 4], y = final_boxes[buffer_index][i * 4 + 1], width = final_boxes[buffer_index][i * 4 + 2], height = final_boxes[buffer_index][i * 4 + 3];

@@ -29,7 +29,7 @@ int main() {
         This will get frames from camera (already in H.264) -> specify the height and width -> parse the H.264 stream -> put it in a queue to create a buffer
         -> encode H.264 data into RTP packets
     */
-    gst_rtsp_media_factory_set_launch(factory, "( v4l2src device=/dev/video0 ! video/h-264, width=1280, height=720 ! h264parse ! queue ! rtph264pay name=pay0 pt=96 )");
+    gst_rtsp_media_factory_set_launch(factory, "( videotestsrc pattern=ball ! video/h-264, width=1280, height=720 ! h264parse ! queue ! rtph264pay name=pay0 pt=96 )");
 
     // Some other possible setting to use
     // gst_rtsp_media_factory_set_launch(factory, "( v4l2src device=/dev/video0 ! video/x-raw, format=YUY2, width=1280, height=720 ! videoconvert ! x264enc ! h264parse ! queue ! rtph264pay name=pay0 pt=96 )");

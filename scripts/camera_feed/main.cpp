@@ -32,7 +32,13 @@ int main() {
     // gst_rtsp_media_factory_set_launch(factory, "( videotestsrc pattern=ball ! video/x-raw width=1280 height=720 ! h264parse ! queue ! rtph264pay name=pay0 pt=96 config-interval=-1 )");
 
     // Some other possible setting to use
-    gst_rtsp_media_factory_set_launch(factory, "( videotestsrc pattern=ball ! video/x-raw, format=YUY2, width=1280, height=720 ! videoconvert ! x264enc ! h264parse ! queue ! rtph264pay name=pay0 pt=96 )");
+    // gst_rtsp_media_factory_set_launch(factory, "( videotestsrc pattern=ball ! video/x-raw, format=YUY2, width=1280, height=720 ! videoconvert ! x264enc ! h264parse ! queue ! rtph264pay name=pay0 pt=96 )");
+    
+    // new jpeg feed to increase speed
+    // gst_rtsp_media_factory_set_launch(factory, "( v4l2src device=/dev/video0 ! image/jpeg, width=800, height=600, framerate=30/1 ! jpegparse ! rtpjpegpay name=pay0 pt=96 )");
+
+    // test source
+    gst_rtsp_media_factory_set_launch(factory, "( videotestsrc pattern=ball ! video/x-raw, format=I420 width=800, height=600, framerate=30/1 ! videoconvert ! jpegenc ! rtpjpegpay name=pay0 pt=96 )");
 
     mounts = gst_rtsp_server_get_mount_points(server);
     gst_rtsp_mount_points_add_factory(mounts, "/cam1", factory);

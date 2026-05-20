@@ -11,7 +11,7 @@ detection::detection(ILogger* t, std::vector<std::string> object_classes, int in
     this->output_dim1 = output_dim1;
     this->output_dim2 = output_dim2;
     this->object_classes = object_classes;
-    
+
     // Create the cuda streams
     cudaStreamCreate(&stream);
     cudaStreamCreate(&stream1);
@@ -52,9 +52,9 @@ detection::detection(ILogger* t, std::vector<std::string> object_classes, int in
             cudaMalloc((void **)&buf.conf_output, 30 * data_size);
             cudaMalloc((void **)&buf.classes, 30 * sizeof(int));
             cudaMalloc((void **)&buf.counts, sizeof(int));
-            cudaMalloc((void **)&buf.testing_output, 8400 * 4 * sizeof(float));
+//            cudaMalloc((void **)&buf.testing_output, 8400 * 4 * sizeof(float));
         }
-        
+
         cudaMalloc((void **)&prob, data_size);
         cudaMalloc((void **)&IoU, data_size);
 
@@ -67,17 +67,17 @@ detection::detection(ILogger* t, std::vector<std::string> object_classes, int in
         final_classes.resize(2);
         final_boxes.resize(2);
         final_conf.resize(2);
-        final_boxes_test.resize(2);
+//        final_boxes_test.resize(2);
 
         final_classes[0].resize(30);
         final_boxes[0].resize(30 * 4);
         final_conf[0].resize(30);
-        final_boxes_test[0].resize(8400 * 4);
+//        final_boxes_test[0].resize(8400 * 4);
 
         final_classes[1].resize(30);
         final_boxes[1].resize(30 * 4);
         final_conf[1].resize(30);
-        final_boxes_test[1].resize(8400 * 4);
+//        final_boxes_test[1].resize(8400 * 4);
 
         num_output[0] = 0;
         num_output[1] = 0;
@@ -85,6 +85,15 @@ detection::detection(ILogger* t, std::vector<std::string> object_classes, int in
         final_classes1.resize(30);
         final_boxes1.resize(30 * 4);
         final_conf1.resize(30);
+
+        // parameters for preprocessing the frame
+        blob_param.datalayout = cv::dnn::DNN_LAYOUT_NCHW;
+        blob_param.ddepth = CV_32F;
+        blob_param.mean = cv::Scalar();
+        blob_param.paddingmode = cv::dnn::DNN_PMODE_LETTERBOX;
+        blob_param.scalefactor = 1.0 / 255.0;
+        blob_param.size = cv::Size(640, 640);
+        blob_param.swapRB = true;
     }
 }
 
@@ -125,7 +134,7 @@ void detection::convert_onnx(std::string onnx_model_path){
     builder = createInferBuilder(*logger);
     // create network
     network = builder->createNetworkV2(1U << static_cast<uint32_t>(NetworkDefinitionCreationFlag::kSTRONGLY_TYPED));
-    // create parser 
+    // create parser
     parser = nvonnxparser::createParser(*network, *logger);
 
     // use parser to parse the onnx model
@@ -140,7 +149,7 @@ void detection::convert_onnx(std::string onnx_model_path){
 
     // add shuffle layer to transpose the original output
     IShuffleLayer* shuffle_layer = network->addShuffle(*combined_output);
-    
+
     shuffle_layer->setFirstTranspose(Permutation{0, 2, 1});
     ITensor* transposed = shuffle_layer->getOutput(0);
     std::cout << "Model output transposed successfully\n";
@@ -149,17 +158,17 @@ void detection::convert_onnx(std::string onnx_model_path){
     auto confidence = network->addSlice(*transposed, Dims3{0, 0, 4}, Dims3{1, output_dim2, output_dim1 - 4}, Dims3{1, 1, 1});
     ITensor* scores = confidence->getOutput(0);
     std::cout << "All class confidence obtained\n";
-    
+
     // slice layer to get the bounding boxes from the transposed model output
     auto bounding_boxes = network->addSlice(*transposed, Dims3{0, 0, 0}, Dims3{1, output_dim2, 4}, Dims3{1, 1, 1});
     ITensor* box_init = bounding_boxes->getOutput(0);
     std::cout << "All box obtained\n";
 
-    auto box_init_out = box_init->getDimensions();
-    std::cout << "Box_init dim: " << box_init_out.nbDims << "\n";
-    for(int i = 0; i < box_init_out.nbDims; i++){
-        std::cout << box_init_out.d[i] << " ";
-    }
+    //auto box_init_out = box_init->getDimensions();
+    //std::cout << "Box_init dim: " << box_init_out.nbDims << "\n";
+    //for(int i = 0; i < box_init_out.nbDims; i++){
+    //    std::cout << box_init_out.d[i] << " ";
+    //}
 
     std::cout << "\n";
 
@@ -186,7 +195,7 @@ void detection::convert_onnx(std::string onnx_model_path){
 
     // add dynamic confidence threshold for the nms
     ITensor* score_tensor = network->addInput("confidence", DataType::kFLOAT, Dims{});
-    
+
     // set the nms layer attribute
     nms_layer->setTopKBoxLimit(30);
     nms_layer->setInput(3, *IoU_threshold);
@@ -203,8 +212,8 @@ void detection::convert_onnx(std::string onnx_model_path){
 
     // pad the output to always be at least 30 element
     // to prevent negative row dimensions
-    int dummy[90] = {0};
-    Weights dummy_vals{DataType::kINT32, dummy, 90};
+    int dummy[30 * 3] = {0};
+    Weights dummy_vals{DataType::kINT32, dummy, 30 * 3};
 
     IConstantLayer* dummy_layer = network->addConstant(Dims2{30, 3}, dummy_vals);
     ITensor* dummy_output = dummy_layer->getOutput(0);
@@ -217,17 +226,17 @@ void detection::convert_onnx(std::string onnx_model_path){
     // change it such that the nms output indicies are always 30 elements
     // by filling in values
     ISliceLayer* correct_index_layer = network->addSlice(*safe_output, Dims2{0, 0}, Dims2{30, 3}, Dims2{1, 1});
-    correct_index_layer->setMode(SampleMode::kFILL);
+    //correct_index_layer->setMode(SampleMode::kFILL);
     ITensor* corrected_index_shape = correct_index_layer->getOutput(0);
 
     // get class indicies
     ISliceLayer* class_slice_layer = network->addSlice(*corrected_index_shape, Dims2{0, 1}, Dims2{30, 1}, Dims2{1, 1});
-    class_slice_layer->setMode(SampleMode::kFILL);
+    //class_slice_layer->setMode(SampleMode::kFILL);
     ITensor* valid_class = class_slice_layer->getOutput(0);
 
     // get box indicies
     ISliceLayer* index_slice_layer = network->addSlice(*corrected_index_shape, Dims2{0, 2}, Dims2{30, 1}, Dims2{1, 1});
-    index_slice_layer->setMode(SampleMode::kFILL);
+    //index_slice_layer->setMode(SampleMode::kFILL);
     ITensor* valid_boxes = index_slice_layer->getOutput(0);
 
     // shuffle layer to reshape the box indicies to 1D to be used in the gather layer
@@ -236,15 +245,15 @@ void detection::convert_onnx(std::string onnx_model_path){
     ITensor* valid_index = reshape_index_layer->getOutput(0);
 
     // make sure all the indicies in box_indicies are at least 0
-    int zero = 0;
-    Weights zeros{DataType::kINT32, &zero, 1};
-    IConstantLayer* zero_constant_layer = network->addConstant(Dims{1, {1}}, zeros);
-    ITensor* zero_output = zero_constant_layer->getOutput(0);
-    IElementWiseLayer* clap_layer = network->addElementWise(*valid_index, *zero_output, ElementWiseOperation::kMAX);
-    ITensor* clamp_output = clap_layer->getOutput(0);
+//    int zero = 0;
+//    Weights zeros{DataType::kINT32, &zero, 1};
+//    IConstantLayer* zero_constant_layer = network->addConstant(Dims{1, {1}}, zeros);
+//    ITensor* zero_output = zero_constant_layer->getOutput(0);
+//    IElementWiseLayer* clap_layer = network->addElementWise(*valid_index, *zero_output, ElementWiseOperation::kMAX);
+//    ITensor* clamp_output = clap_layer->getOutput(0);
 
     // get the valid boxes
-    IGatherLayer* valid_box_layer = network->addGatherV2(*box_init, *clamp_output, GatherMode::kDEFAULT);
+    IGatherLayer* valid_box_layer = network->addGatherV2(*box_init, *valid_index, GatherMode::kDEFAULT);
     valid_box_layer->setGatherAxis(1);
     ITensor* valid_box = valid_box_layer->getOutput(0);
     IShuffleLayer* valid_box_final_layer = network->addShuffle(*valid_box);
@@ -260,7 +269,7 @@ void detection::convert_onnx(std::string onnx_model_path){
     std::cout << "\n";
 
     // get confidence
-    IGatherLayer* valid_confidence_layer = network->addGatherV2(*scores, *clamp_output, GatherMode::kDEFAULT);
+    IGatherLayer* valid_confidence_layer = network->addGatherV2(*scores, *valid_index, GatherMode::kDEFAULT);
     valid_confidence_layer->setGatherAxis(1);
     ITensor* valid_confidence = valid_confidence_layer->getOutput(0);
     IReduceLayer* valid_conf_reduce = network->addReduce(*valid_confidence, ReduceOperation::kMAX, 1 << 2, 1);
@@ -277,19 +286,19 @@ void detection::convert_onnx(std::string onnx_model_path){
 
     std::cout << "\n";
 
-    // set names for the outputs 
+    // set names for the outputs
     conf_final->setName("confidences");
     box_final->setName("box");
     box_counts->setName("counts");
     valid_class->setName("class");
-    box_init->setName("box_test");
+    //box_init->setName("box_test");
 
     // add the new outputs to the model
     network->markOutput(*box_final);
     network->markOutput(*conf_final);
     network->markOutput(*valid_class);
     network->markOutput(*box_counts);
-    network->markOutput(*box_init);
+    //network->markOutput(*box_init);
 
     std::cout << "Model conversion successful\n";
 }
@@ -353,7 +362,7 @@ std::vector<char> detection::readModelFromFile(std::string engine_path){
     // set the file_size to the read position, which is now the end of the file
     file_size = input.tellg();
 
-    // return the read position back to the beginning 
+    // return the read position back to the beginning
     input.seekg(0, std::ios::beg);
 
     std::vector<char> model_data(file_size);
@@ -367,8 +376,8 @@ std::vector<char> detection::readModelFromFile(std::string engine_path){
 void detection::load_model(std::string engine_path){
     // create a runtime
     runtime = createInferRuntime(*logger);
-    
-    // get model data 
+
+    // get model data
     std::vector<char> modelData = readModelFromFile(engine_path);
 
     // deserialize the engine data
@@ -385,10 +394,10 @@ cv::Mat detection::preprocess(cv::Mat frame){
 
     // converts frame into NCHW format
     // TODO: Implement a CUDA kernel to do this instead of using the blobFromImage function
-	// cv::dnn::blobFromImage(frame, blob, 1.0 / 255.0, cv::Size(input_size, input_size), cv::Scalar(), true, false);
+        // cv::dnn::blobFromImage(frame, blob, 1.0 / 255.0, cv::Size(input_size, input_size), cv::Scalar(), true, false);
 
     cv::dnn::Image2BlobParams blob_param;
-    
+
     blob_param.datalayout = cv::dnn::DNN_LAYOUT_NCHW;
     blob_param.ddepth = CV_32F;
     blob_param.mean = cv::Scalar();
@@ -409,18 +418,11 @@ void detection::preprocess_async(int buffer_index, cv::Mat frame){
     center_x = frame.cols / 2.0;
     center_y = frame.rows / 2.0;
 
-    cv::Mat blob;
+    display_frames[buffer_index] = frame;
+    //std::cout << "Width: " << display_frames[buffer_index].cols << "\n";
+    //std::cout << "Height: " << display_frames[buffer_index].rows << "\n";
 
-    // parameters for preprocessing the frame
-    cv::dnn::Image2BlobParams blob_param;
-    
-    blob_param.datalayout = cv::dnn::DNN_LAYOUT_NCHW;
-    blob_param.ddepth = CV_32F;
-    blob_param.mean = cv::Scalar();
-    blob_param.paddingmode = cv::dnn::DNN_PMODE_LETTERBOX;
-    blob_param.scalefactor = 1.0 / 255.0;
-    blob_param.size = cv::Size(640, 640);
-    blob_param.swapRB = true;
+    cv::Mat blob;
 
     // preprocess the frame based on the parameters
     blob = cv::dnn::blobFromImageWithParams(frame, blob_param);
@@ -481,7 +483,7 @@ void detection::inference_async(int buffer_index) {
     contexts[buffer_index]->setTensorAddress("box", double_buffer[buffer_index].boxes_output);
     contexts[buffer_index]->setTensorAddress("counts", double_buffer[buffer_index].counts);
     contexts[buffer_index]->setTensorAddress("class", double_buffer[buffer_index].classes);
-    contexts[buffer_index]->setTensorAddress("box_test", double_buffer[buffer_index].testing_output);
+    //contexts[buffer_index]->setTensorAddress("box_test", double_buffer[buffer_index].testing_output);
 
     contexts[buffer_index]->enqueueV3(streams[buffer_index]);
 }
@@ -515,7 +517,7 @@ void detection::postprocess() {
     for(int i = 0; i < num_output1; i++) {
         float x = final_boxes1[i * 4], y = final_boxes1[i * 4 + 1], width = final_boxes1[i * 4 + 2], height = final_boxes1[i * 4 + 3];
         cv::Rect2d bounds = cv::Rect2d((x - (width / 2)) * x_scale, (y - (height / 2)) * y_scale, width * x_scale, height * y_scale);
-        
+
         max_conf = final_conf1[i];
 
         int id = final_classes1[i];
@@ -526,8 +528,8 @@ void detection::postprocess() {
         // cv::rectangle(cpu_frame, bounds, cv::Scalar(0, 0, 0), 3); // Draw the bounding box
         // std::string info = object + ": ";
         // info += std::to_string(max_conf);
-        // cv::putText(cpu_frame, info, cv::Point(bounds.x, bounds.y), cv::FONT_HERSHEY_SIMPLEX, 0.25, cv::Scalar(0, 255, 255)); // Put text 
-        
+        // cv::putText(cpu_frame, info, cv::Point(bounds.x, bounds.y), cv::FONT_HERSHEY_SIMPLEX, 0.25, cv::Scalar(0, 255, 255)); // Put text
+
         // cv::imshow("Pic", cpu_frame);
         // cv::waitKey(10);
     }
@@ -554,40 +556,42 @@ void detection::postprocess_async(int buffer_index) {
         std::cout << "cuda 4 failed";
     }
 
-    cudaError err5 = cudaMemcpyAsync(final_boxes_test[buffer_index].data(), double_buffer[buffer_index].testing_output, 8400 * 4 * sizeof(float), cudaMemcpyDeviceToHost, streams[buffer_index]);
-    if(err5 != cudaSuccess) {
-        std::cout << "cuda 5 failed";
-    }
+//    cudaError err5 = cudaMemcpyAsync(final_boxes_test[buffer_index].data(), double_buffer[buffer_index].testing_output, 8400 * 4 * sizeof(float), cudaMemcpyDeviceToHost, streams[buffer_index]);
+//    if(err5 != cudaSuccess) {
+//        std::cout << "cuda 5 failed";
+//    }
 
     // std::cout << "count: " << num_output << "\n";
     cudaStreamSynchronize(streams[buffer_index]);
 
 
     // only for testing purpose
-    for(int i = 0; i < 8400; i++) {
-        std::cout << "x: " << final_boxes_test[buffer_index][i * 4] << " y: " << final_boxes_test[buffer_index][i * 4 + 1] 
-        << " w: " << final_boxes_test[buffer_index][i * 4 + 2] << " h: " << final_boxes_test[buffer_index][i * 4 + 3] << "\n";
-    }
+//    for(int i = 0; i < 8400; i++) {
+//        std::cout << "x: " << final_boxes_test[buffer_index][i * 4] << " y: " << final_boxes_test[buffer_index][i * 4 + 1]
+//        << " w: " << final_boxes_test[buffer_index][i * 4 + 2] << " h: " << final_boxes_test[buffer_index][i * 4 + 3] << "\n";
+//    }
 
     for(int i = 0; i < num_output[buffer_index]; i++) {
         float x = final_boxes[buffer_index][i * 4], y = final_boxes[buffer_index][i * 4 + 1], width = final_boxes[buffer_index][i * 4 + 2], height = final_boxes[buffer_index][i * 4 + 3];
-        cv::Rect2d bounds = cv::Rect2d((x - (width / 2)) * x_scale, (y - (height / 2)) * y_scale, width * x_scale, height * y_scale);
-        
+        cv::Rect2d bounds = cv::Rect2d((x - (width / 2)), (y - (height / 2)), width, height);
+        cv::Rect2d final_bounds = blob_param.blobRectToImageRect(bounds, cv::Size(640, 480));
+
         max_conf = final_conf[buffer_index][i];
 
         int id = final_classes[buffer_index][i];
         std::string object = object_classes[id];
 
-        // std::cout << "Object: " << object << " | " << "X offset: " << (bounds.x + bounds.width / 2) - center_x << " | " << "Y offset: " << center_y - (bounds.y + bounds.height / 2) << "\n";
+        //std::cout << "Object: " << object << " | " << "X offset: " << (bounds.x + bounds.width / 2) - center_x << " | " << "Y offset: " << center_y - (bounds.y + bounds.height / 2) << "\n";
 
-        // cv::rectangle(cpu_frame, bounds, cv::Scalar(0, 0, 0), 3); // Draw the bounding box
-        // std::string info = object + ": ";
-        // info += std::to_string(max_conf);
-        // cv::putText(cpu_frame, info, cv::Point(bounds.x, bounds.y), cv::FONT_HERSHEY_SIMPLEX, 0.25, cv::Scalar(0, 255, 255)); // Put text 
-        
-        // cv::imshow("Pic", cpu_frame);
-        // cv::waitKey(10);
+        cv::rectangle(display_frames[buffer_index], final_bounds, cv::Scalar(0, 0, 0), 3); // Draw the bounding box
+        std::string info = object + ": ";
+        info += std::to_string(max_conf);
+        cv::putText(display_frames[buffer_index], info, cv::Point(final_bounds.x, final_bounds.y), cv::FONT_HERSHEY_SIMPLEX, 0.25, cv::Scalar(0, 255, 255)); // Put text
+
     }
+
+    cv::imshow("Pic", display_frames[buffer_index]);
+    cv::waitKey(1);
 }
 
 void detection::dec(){

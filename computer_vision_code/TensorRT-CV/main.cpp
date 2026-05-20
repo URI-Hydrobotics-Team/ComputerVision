@@ -4,7 +4,7 @@
 class Logger : public ILogger
 {
     void log(Severity severity, const char* msg) noexcept override{
-        if (severity <= Severity::kWARNING){
+        if (severity <= Severity::kINFO){
             std::cout << msg << std::endl;
         }
     }
@@ -19,29 +19,32 @@ int main(){
 
 
     // This line is used to build an engine file
-    // model.build_engine("onnx model path", "engine model destination path");
+//    model.build_engine("/home/hydro/ComputerVision/models/yolov5nu.onnx", "/home/hydro/ComputerVision/models/yolov5_FP32_testing.engine");
 
-    model.load_model("engine path");
+    model.load_model("/home/hydro/ComputerVision/models/yolov5_FP32_testing.engine");
 
     cv::VideoCapture camera;
+    camera.open(0);
 
     // Warm up to initialize GPU memory, allocation, and the model
-    cv::Mat frame = cv::imread("image");
+    cv::Mat frames[2];
 
-    for(int i = 0; i < 100; i++) {
-        model.inference(frame);
-    }
+    //for(int i = 0; i < 100; i++) {
+        //model.inference(frame);
+    //}
 
     int cur_index = 0;
-    model.preprocess_async(cur_index, frame);
+    camera.read(frames[cur_index]);
+    model.preprocess_async(cur_index, frames[cur_index]);
     model.inference_async(cur_index);
 
     auto start = std::chrono::high_resolution_clock::now();
 
-    for(int i = 0; i < 10000; i++){
+    for(int i = 0; i < 40000; i++){
         // std::cout << i << "\n";
         cur_index = !cur_index;
-        model.preprocess_async(cur_index, frame);
+        camera.read(frames[cur_index]);
+        model.preprocess_async(cur_index, frames[cur_index]);
         model.inference_async(cur_index);
         model.postprocess_async(!cur_index);
     }
@@ -51,8 +54,8 @@ int main(){
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::seconds>(end - start);
 
-    std::cout << "Average inference fps is: " << 10000 / duration.count() << "\n";
-    // // // cv::Mat frame;
+    std::cout << "Average inference fps is: " << 40000 / duration.count() << "\n";
+//    // // // cv::Mat frame;
     // // // camera.open(0);
 
     // // // while(true){

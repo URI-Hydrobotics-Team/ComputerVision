@@ -25,14 +25,14 @@ class detection{
         // function to parse onnx model file
         void convert_onnx(std::string onnx_model_path);
 
-        // function to build engine file 
+        // function to build engine file
         // filename: onnx model file path
         void build_engine(std::string onnx_file, std::string filename);
 
         // function to load the optimized engine file
         void load_model(std::string engine_path);
 
-        // function to read the engine file 
+        // function to read the engine file
         std::vector<char> readModelFromFile(std::string engine_path);
 
         // function to do inference on the frame
@@ -57,16 +57,16 @@ class detection{
             int* classes;
             float* boxes_output;
             float* conf_output;
-            float* testing_output;
+//            float* testing_output;
 
-            buffers(): input_pointer(nullptr), counts(nullptr), classes(nullptr), boxes_output(nullptr), conf_output(nullptr), testing_output(nullptr) {}
+            buffers(): input_pointer(nullptr), counts(nullptr), classes(nullptr), boxes_output(nullptr), conf_output(nullptr) {}
 
             ~buffers() {
                 if(input_pointer) {
                     cudaFree(input_pointer);
                 }
-                if(counts) { 
-                    cudaFree(counts); 
+                if(counts) {
+                    cudaFree(counts);
                 }
                 if(classes) {
                     cudaFree(classes);
@@ -77,9 +77,9 @@ class detection{
                 if(conf_output){
                     cudaFree(conf_output);
                 }
-                if(testing_output) {
-                    cudaFree(conf_output);
-                }
+//                if(testing_output) {
+//                    cudaFree(conf_output);
+//                }
             }
         };
 
@@ -96,7 +96,7 @@ class detection{
         // used to configure settings of the engine model that will be built
         // EX: batch size, memeory allocation
         IBuilderConfig* config;
-        // used to deserialize the 
+        // used to deserialize the
         IRuntime* runtime;
         // this is responsible many operations
         // Ex: perform inference, loading tensor
@@ -111,11 +111,11 @@ class detection{
         // cudaStream_t stream4;
 
         // These are the pointer used to store input and output tensor values if FP32 model is loaded
-        float* input_ptr;        
+        float* input_ptr;
         float* output_ptr;
 
         // These are the pointer used to store input and output tensor values if FP16 model is loaded
-        __half* input_ptr_half;        
+        __half* input_ptr_half;
         __half* output_ptr_half;
 
         // This pointer is used if FP16 model is used
@@ -156,7 +156,7 @@ class detection{
         cv::Mat input;
         cv::Mat some;
 
-        // GPU matrix 
+        // GPU matrix
         cv::cuda::GpuMat output_mat;
         cv::cuda::GpuMat transposed_output_mat;
         // cv::cuda::GpuMat access_row;
@@ -168,7 +168,7 @@ class detection{
         int* classes;
         int* index_count;
         float* IoU;
-        float* prob; 
+        float* prob;
 
         float model_prob;
         float model_IoU;
@@ -176,8 +176,10 @@ class detection{
         std::vector<std::vector<int>> final_classes;
         std::vector<std::vector<float>> final_conf;
         std::vector<std::vector<float>> final_boxes;
-        std::vector<std::vector<float>> final_boxes_test;
+//        std::vector<std::vector<float>> final_boxes_test;
         int num_output[2];
+        cv::Mat display_frames[2];
+        cv::dnn::Image2BlobParams blob_param;
 
         cv::Mat cpu_frame;
         cudaStream_t streams[2];

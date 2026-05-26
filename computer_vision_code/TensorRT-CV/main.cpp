@@ -29,10 +29,6 @@ int main(){
     // Warm up to initialize GPU memory, allocation, and the model
     cv::Mat frames[2];
 
-    //for(int i = 0; i < 100; i++) {
-        //model.inference(frame);
-    //}
-
     int cur_index = 0;
     camera.read(frames[cur_index]);
     model.preprocess_async(cur_index, frames[cur_index]);
@@ -55,16 +51,6 @@ int main(){
     auto duration = std::chrono::duration_cast<std::chrono::seconds>(end - start);
 
     std::cout << "Average inference fps is: " << 40000 / duration.count() << "\n";
-//    // // // cv::Mat frame;
-    // // // camera.open(0);
-
-    // // // while(true){
-    // // //     camera.read(frame);
-
-    // // //     model.inference(frame);
-    // // // }
-
-    // // model.dec();
 
     return 0;
 }

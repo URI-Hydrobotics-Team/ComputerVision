@@ -57,7 +57,6 @@ class detection{
             int* classes;
             float* boxes_output;
             float* conf_output;
-//            float* testing_output;
 
             buffers(): input_pointer(nullptr), counts(nullptr), classes(nullptr), boxes_output(nullptr), conf_output(nullptr) {}
 
@@ -77,9 +76,6 @@ class detection{
                 if(conf_output){
                     cudaFree(conf_output);
                 }
-//                if(testing_output) {
-//                    cudaFree(conf_output);
-//                }
             }
         };
 

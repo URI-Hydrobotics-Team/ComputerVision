@@ -11,12 +11,23 @@
 #include <iostream>
 #include <fstream>
 #include <chrono>
-#include "helper_functions.cuh"
+// #include "helper_functions.cuh"
 using namespace nvinfer1;
 
 
 class detection{
     public:
+        // struct to contain the essential CV detection results
+        struct CV_data {
+            std::string object_name;
+            float pixel_x_offset;
+            float pixel_y_offset;
+            uint64_t time;
+            float confidence;
+
+            CV_data(): object_name(""), pixel_x_offset(0), pixel_y_offset(0), time(0), confidence(0) {}
+        };
+        
         // constructor, take in the logger object, input and output size
         // model_type is int either 32 or 16 representing FP16 or FP32 models
         detection(ILogger* t, std::vector<std::string> object_classes, int input_size, int output_channel, int output_dim1, int output_dim2, int model_type);
@@ -44,7 +55,7 @@ class detection{
         void preprocess_async(int buffer_index, cv::Mat frame);
 
         // function to do postprocess operation on the output tensor
-        void postprocess();
+        CV_data postprocess();
         void postprocess_async(int buffer_index);
 
         // function to free all GPU memory and objects
@@ -78,17 +89,6 @@ class detection{
                 }
             }
         };
-
-        // struct to contain the essential CV detection results
-        struct CV_data {
-            std::string object_name;
-            float pixel_x_offset;
-            float pixel_y_offset;
-            uint64_t time;
-            float confidence;
-
-            CV_data(): object_name(""), pixel_x_offset(0), pixel_y_offset(0), time(0), confidence(0) {}
-        }
 
         // Used to capture errors
         ILogger* logger;

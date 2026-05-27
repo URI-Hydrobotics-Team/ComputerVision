@@ -79,6 +79,17 @@ class detection{
             }
         };
 
+        // struct to contain the essential CV detection results
+        struct CV_data {
+            std::string object_name;
+            float pixel_x_offset;
+            float pixel_y_offset;
+            uint64_t time;
+            float confidence;
+
+            CV_data(): object_name(""), pixel_x_offset(0), pixel_y_offset(0), time(0), confidence(0) {}
+        }
+
         // Used to capture errors
         ILogger* logger;
         // model path of the onnx model

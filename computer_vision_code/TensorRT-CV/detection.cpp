@@ -419,8 +419,6 @@ void detection::preprocess_async(int buffer_index, cv::Mat frame){
     center_y = frame.rows / 2.0;
 
     display_frames[buffer_index] = frame;
-    //std::cout << "Width: " << display_frames[buffer_index].cols << "\n";
-    //std::cout << "Height: " << display_frames[buffer_index].rows << "\n";
 
     cv::Mat blob;
 

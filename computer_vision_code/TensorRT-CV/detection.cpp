@@ -390,7 +390,8 @@ void detection::load_model(std::string engine_path){
 
 cv::Mat detection::preprocess(cv::Mat frame){
     cv::Mat blob;
-    // cpu_frame = frame;
+    cpu_frame = frame;
+    std::cout << frame.rows << " " << frame.cols << "\n";
 
     // converts frame into NCHW format
     // TODO: Implement a CUDA kernel to do this instead of using the blobFromImage function
@@ -468,9 +469,6 @@ void detection::inference(cv::Mat frame){
 
     // perform inference
     context->enqueueV3(stream);
-
-    // post process the result
-    postprocess();
 }
 
 void detection::inference_async(int buffer_index) {
@@ -487,8 +485,9 @@ void detection::inference_async(int buffer_index) {
 }
 
 
-void detection::postprocess() {
+std::vector<CV_data> detection::postprocess(std::string obj) {
     cudaError err1 = cudaMemcpyAsync(final_classes1.data(), classes, 30 * sizeof(int), cudaMemcpyDeviceToHost, stream);
+    std::vector<CV_data> result;
 
     if(err1 != cudaSuccess) {
         std::cout << "cuda 1 failed";
@@ -509,28 +508,39 @@ void detection::postprocess() {
         std::cout << "cuda 4 failed";
     }
 
-    // std::cout << "count: " << num_output << "\n";
     cudaStreamSynchronize(stream);
 
     for(int i = 0; i < num_output1; i++) {
         float x = final_boxes1[i * 4], y = final_boxes1[i * 4 + 1], width = final_boxes1[i * 4 + 2], height = final_boxes1[i * 4 + 3];
-        cv::Rect2d bounds = cv::Rect2d((x - (width / 2)) * x_scale, (y - (height / 2)) * y_scale, width * x_scale, height * y_scale);
+        cv::Rect2d bounds = cv::Rect2d((x - (width / 2)), (y - (height / 2)), width, height);
+        cv::Rect2d final_bounds = blob_param.blobRectToImageRect(bounds, cv::Size(cpu_frame.cols, cpu_frame.rows));
 
         max_conf = final_conf1[i];
 
         int id = final_classes1[i];
         std::string object = object_classes[id];
 
-        std::cout << "Object: " << object << " | " << "X offset: " << (bounds.x + bounds.width / 2) - center_x << " | " << "Y offset: " << center_y - (bounds.y + bounds.height / 2) << "\n";
+        std::cout << "Object: " << object << " | " << "X offset: " << (final_bounds.x + final_bounds.width / 2) - center_x << " | " << "Y offset: " << center_y - (final_bounds.y + final_bounds.height / 2) << "\n";
 
-        // cv::rectangle(cpu_frame, bounds, cv::Scalar(0, 0, 0), 3); // Draw the bounding box
+        if(object == obj) {
+            time_t timestamp;
+            std::time(&timestamp);
+    
+            result.push_back(CV_data(object, final_bounds.x + final_bounds.width / 2, center_y - (final_bounds.y + final_bounds.height / 2), timestamp, max_conf, final_bounds));
+        }
+        
+        
+        // For testing purpose only, it displays the current frame with CV labels
+        // cv::rectangle(cpu_frame, final_bounds, cv::Scalar(0, 0, 0), 3); // Draw the bounding box
         // std::string info = object + ": ";
         // info += std::to_string(max_conf);
-        // cv::putText(cpu_frame, info, cv::Point(bounds.x, bounds.y), cv::FONT_HERSHEY_SIMPLEX, 0.25, cv::Scalar(0, 255, 255)); // Put text
+        // cv::putText(cpu_frame, info, cv::Point(final_bounds.x, final_bounds.y), cv::FONT_HERSHEY_SIMPLEX, 0.25, cv::Scalar(0, 255, 255)); // Put text
 
         // cv::imshow("Pic", cpu_frame);
-        // cv::waitKey(10);
+        // cv::waitKey(100);
     }
+    
+    return result;
 }
 
 void detection::postprocess_async(int buffer_index) {
@@ -554,20 +564,20 @@ void detection::postprocess_async(int buffer_index) {
         std::cout << "cuda 4 failed";
     }
 
-//    cudaError err5 = cudaMemcpyAsync(final_boxes_test[buffer_index].data(), double_buffer[buffer_index].testing_output, 8400 * 4 * sizeof(float), cudaMemcpyDeviceToHost, streams[buffer_index]);
-//    if(err5 != cudaSuccess) {
-//        std::cout << "cuda 5 failed";
-//    }
+    //    cudaError err5 = cudaMemcpyAsync(final_boxes_test[buffer_index].data(), double_buffer[buffer_index].testing_output, 8400 * 4 * sizeof(float), cudaMemcpyDeviceToHost, streams[buffer_index]);
+    //    if(err5 != cudaSuccess) {
+    //        std::cout << "cuda 5 failed";
+    //    }
 
     // std::cout << "count: " << num_output << "\n";
     cudaStreamSynchronize(streams[buffer_index]);
 
 
     // only for testing purpose
-//    for(int i = 0; i < 8400; i++) {
-//        std::cout << "x: " << final_boxes_test[buffer_index][i * 4] << " y: " << final_boxes_test[buffer_index][i * 4 + 1]
-//        << " w: " << final_boxes_test[buffer_index][i * 4 + 2] << " h: " << final_boxes_test[buffer_index][i * 4 + 3] << "\n";
-//    }
+    //    for(int i = 0; i < 8400; i++) {
+    //        std::cout << "x: " << final_boxes_test[buffer_index][i * 4] << " y: " << final_boxes_test[buffer_index][i * 4 + 1]
+    //        << " w: " << final_boxes_test[buffer_index][i * 4 + 2] << " h: " << final_boxes_test[buffer_index][i * 4 + 3] << "\n";
+    //    }
 
     for(int i = 0; i < num_output[buffer_index]; i++) {
         float x = final_boxes[buffer_index][i * 4], y = final_boxes[buffer_index][i * 4 + 1], width = final_boxes[buffer_index][i * 4 + 2], height = final_boxes[buffer_index][i * 4 + 3];

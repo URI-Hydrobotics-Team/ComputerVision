@@ -11,23 +11,38 @@
 #include <iostream>
 #include <fstream>
 #include <chrono>
+#include <ctime>
 // #include "helper_functions.cuh"
+#include <cuda_fp16.h>
 using namespace nvinfer1;
 
+// struct to contain the essential CV detection results
+struct CV_data {
+    char object_name[32];
+    float pixel_x_offset;
+    float pixel_y_offset;
+    time_t time;
+    float confidence;
+    cv::Rect2d bbox;
+    float x;
+    float y;
+    float z;
+
+    CV_data(std::string obj, float x, float y, time_t time, float conf, cv::Rect2d bbox) {
+        snprintf(object_name, 32, "%s", obj.c_str());
+        pixel_x_offset = x;
+        pixel_y_offset = y;
+        this->time = time;
+        confidence = conf;
+        this->bbox = bbox;
+        x = 0;
+        y = 0;
+        z = 0;
+    }
+};
 
 class detection{
     public:
-        // struct to contain the essential CV detection results
-        struct CV_data {
-            std::string object_name;
-            float pixel_x_offset;
-            float pixel_y_offset;
-            uint64_t time;
-            float confidence;
-
-            CV_data(): object_name(""), pixel_x_offset(0), pixel_y_offset(0), time(0), confidence(0) {}
-        };
-        
         // constructor, take in the logger object, input and output size
         // model_type is int either 32 or 16 representing FP16 or FP32 models
         detection(ILogger* t, std::vector<std::string> object_classes, int input_size, int output_channel, int output_dim1, int output_dim2, int model_type);
@@ -55,7 +70,7 @@ class detection{
         void preprocess_async(int buffer_index, cv::Mat frame);
 
         // function to do postprocess operation on the output tensor
-        CV_data postprocess();
+        std::vector<CV_data> postprocess(std::string obj);
         void postprocess_async(int buffer_index);
 
         // function to free all GPU memory and objects

@@ -77,6 +77,20 @@ void atan_angle(cv::Point2f *points, size_t size, float cx, float cy) {
     });
 }
 
+cv::Point2f get_center(cv::Point2f *points, size_t size, float corner) {
+    cv::Point center{0, 0};
+
+    for(int i = 0; i < size; i++) {
+        center.x += points[i].x;
+        center.y += points[i].y;
+    }
+
+    float cx = center.x / corner;
+    float cy = center.y / corner;
+
+    return cv::Point2f(cx, cy);
+}
+
 void PnP_distance(std::vector<CV_data> &result, cv::Mat frame, std::string object_name) {
     for(int i = 0; i < result.size(); i++) {
         cv::Mat rvec;
@@ -115,15 +129,8 @@ void PnP_distance(std::vector<CV_data> &result, cv::Mat frame, std::string objec
             points.points(corners);
 
             // angle rotate points
-            cv::Point center{0, 0};
-
-            for(auto point : corners) {
-                center.x += point.x;
-                center.y += point.y;
-            }
-
-            float cx = center.x / 4.0f;
-            float cy = center.y / 4.0f;
+            cv::Point2f cx_cy = get_center(corners, 4, 4);
+            float cx = cx_cy.x, cy = cx_cy.y;
 
             // sort corners
             atan_angle(corners, 4, cx, cy);
@@ -156,7 +163,7 @@ void PnP_distance(std::vector<CV_data> &result, cv::Mat frame, std::string objec
                 result[i].z = -1;
             }
         } else if(object_name == "Octagon") {
-            std::vector<cv::Point> approxCurve;
+            std::vector<cv::Point2f> approxCurve;
             for(auto c : contours) {
                 float ep = 0.02 * cv::arcLength(c, true);
                 cv::approxPolyDP(c, approxCurve, ep, true);
@@ -165,6 +172,12 @@ void PnP_distance(std::vector<CV_data> &result, cv::Mat frame, std::string objec
                     break;
                 }
             }
+
+            // angle rotate points
+            cv::Point2f cx_cy = get_center(approxCurve.data(), approxCurve.size(), 8);
+            float cx = cx_cy.x, cy = cx_cy.y;
+
+            atan_angle(approxCurve.data(), approxCurve.size(), cx, cy);
             bool success = cv::solvePnP(octagon_corners, approxCurve, cameraMatrix, distort, rvec, tvec);
 
             if(success) {
@@ -191,7 +204,6 @@ int main(){
     model.load_model("/home/hydro/ComputerVision/models/yolov5_FP32_testing.engine");
 
     cv::VideoCapture camera;
-    camera.open(0);
 
     // Warm up to initialize GPU memory, allocation, and the model
 

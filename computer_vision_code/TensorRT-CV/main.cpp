@@ -251,10 +251,10 @@ int main(){
 
     socklen_t len;
     ssize_t bytes;
+    len = sizeof(clientaddr);
 
     while(true){
-        memset(buffer, 0, 1024);
-        bytes = recvfrom(socket_fd, buffer, 1023, MSG_WAITALL, ( struct sockaddr *) &clientaddr, &len);
+        bytes = recvfrom(socket_fd, buffer, 1023, 0, ( struct sockaddr *) &clientaddr, &len);
         buffer[bytes] = '\0';
 
         if(bytes > 0) {
@@ -262,6 +262,11 @@ int main(){
             // Assume format is just the object name
             std::string obj(buffer);
             camera.read(frame);
+
+            if(frame.empty()) {
+                std::cerr << "Frame is empty\n";
+                std::exit(EXIT_FAILURE);
+            }
     
             model.inference(frame);
             std::vector<CV_data> result = model.postprocess(obj);

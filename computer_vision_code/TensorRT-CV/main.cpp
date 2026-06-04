@@ -1,6 +1,8 @@
 #include "detection.h"
 #include <opencv2/calib3d.hpp>
 #include <sys/socket.h>
+#include <netinet/in.h> 
+#include <arpa/inet.h> 
 
 class Logger : public ILogger
 {
@@ -227,13 +229,37 @@ int main(){
     camera.open(0);
     
     char buffer[1024];
-    int socket = 0;
+    int socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
+    struct sockaddr_in servaddr, clientaddr; 
+
+    if(socket_fd < 0) {
+        std::cerr << "Failed to create socket\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    memset(&servaddr, 0, sizeof(servaddr)); 
+    memset(&clientaddr, 0, sizeof(clientaddr)); 
+
+    servaddr.sin_addr.s_addr = INADDR_ANY;
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_port = htons(8080);
+
+    if(bind(socket_fd, (const struct sockaddr *)&servaddr, sizeof(servaddr)) < 0 ) {
+        std::cerr << "Unable to bind server\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    socklen_t len;
+    ssize_t bytes;
 
     while(true){
-        ssize_t bytes = recv(socket, buffer, 1023, 0);
+        memset(buffer, 0, 1024);
+        bytes = recvfrom(socket_fd, buffer, 1023, MSG_WAITALL, ( struct sockaddr *) &clientaddr, &len);
+        buffer[bytes] = '\0';
 
         if(bytes > 0) {
             // Placeholder for message
+            // Assume format is just the object name
             std::string obj(buffer);
             camera.read(frame);
     
@@ -245,6 +271,16 @@ int main(){
             } else {
                 PnP_distance(result, frame, obj);
             }
+
+            std::string send;
+            for(int i = 0; i < result.size(); i++) {
+                // Format: name|confidence|pixel x offset|pixel y offset|actual distance in z
+                // Seperated by | of different data and seperated by \n for different detected objects
+                send += std::string(result[i].object_name) + "|" + std::to_string(result[i].confidence) + "|" + std::to_string(result[i].time) + "|" + std::to_string(result[i].pixel_x_offset) + "|" + std::to_string(result[i].pixel_y_offset) + "|" + std::to_string(result[i].z) + '\n';
+            }
+
+            sendto(socket_fd, send.c_str(), send.length(), MSG_CONFIRM, (const struct sockaddr *) &clientaddr, len); 
+
         } else if(bytes == 0) {
             break;
         } else {

@@ -16,6 +16,7 @@ class Logger : public ILogger
 // Gloabl points for object real world dimensions
 // camera stuff
 // camera matrix
+// REQUIRED CAMERA CALIBRATION TO OBTAIN THIS DATA
 cv::Mat cameraMatrix = (
     cv::Mat_<double>(3, 3) <<
     0.00000000e+00, 0.00000000e+00, 0.00000000e+00,
@@ -24,9 +25,18 @@ cv::Mat cameraMatrix = (
 );
 
 // distortion matrix
+// REQUIRED CAMERA CALIBRATION TO OBTAIN THIS DATA
 cv::Mat distort = (
     cv::Mat_<double>(5, 1) << 0, 0, 0, 0, 0
 );
+
+// hashmap to make object dimension adding easier
+// For naive distance object
+std::unordered_map<std::string, float> naive_area = {
+    {"Gate", 5640},
+    {"Slalom", 2160},
+    {"Octagon", 11802.56}
+};
 
 // Gate
 std::vector<cv::Point3f> gate_corners = {cv::Point3f(-120/2, 47/2.0f, 0), cv::Point3f(34/2, 47/2.0f, 0), cv::Point3f(120/2, -47/2.0f, 0), cv::Point3f(-120/2, -47/2.0f, 0)};
@@ -93,6 +103,8 @@ cv::Point2f get_center(cv::Point2f *points, size_t size, float corner) {
     return cv::Point2f(cx, cy);
 }
 
+// PnP function to do distance estimation
+// REQUIRE CAMERA CALIBRATION DATA TO FUNCTION
 void PnP_distance(std::vector<CV_data> &result, cv::Mat frame, std::string object_name) {
     for(int i = 0; i < result.size(); i++) {
         cv::Mat rvec;
@@ -193,7 +205,7 @@ void PnP_distance(std::vector<CV_data> &result, cv::Mat frame, std::string objec
     }
 }
 
-int main(){
+int main(int argc, char* argv[]){
 
     Logger logger;
     std::vector<std::string> object_classes = { "person", "bicycle", "car", "motorbike", "aeroplane", "bus", "train", "truck", "boat", "traffic light", "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove", "skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "sofa", "pottedplant", "bed", "diningtable", "toilet", "tvmonitor", "laptop", "mouse", "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush" };
@@ -201,8 +213,14 @@ int main(){
 
 
     // This line is used to build an engine file
-    // model.build_engine("onnx model path", "engine model destination path");
+    if(argc == 4 && strncmp(argv[1], "build", 32) == 0) {
+        std::string onnx_path = argv[2];
+        std::string dest_path = argv[3];
+        model.build_engine(onnx_path, dest_path);
+        std::cout << "Model build successful, path is: " << dest_path << "\n";
+    }
 
+    // Engine path example: "/home/hydro/ComputerVision/models/yolov5_FP32_testing.engine"
     model.load_model("/home/hydro/ComputerVision/models/yolov5_FP32_testing.engine");
 
     cv::VideoCapture camera;
@@ -271,10 +289,18 @@ int main(){
             model.inference(frame);
             std::vector<CV_data> result = model.postprocess(obj);
 
-            if(obj == "Slalom") {
-                naive_distance(result, 2160, 3000);
+            if(argc == 1 || strncmp(argv[1], "naive", 32) == 0) {
+                std::unordered_map<std::string, float>::const_iterator iterator = naive_area.find(obj);
+
+                if(iterator != naive_area.end()) {
+                    naive_distance(result, naive_area.at(obj), 3000);
+                }
             } else {
-                PnP_distance(result, frame, obj);
+                if(obj == "Slalom") {
+                    naive_distance(result, naive_area.at(obj), 3000);
+                } else {
+                    PnP_distance(result, frame, obj);
+                }
             }
 
             std::string send;

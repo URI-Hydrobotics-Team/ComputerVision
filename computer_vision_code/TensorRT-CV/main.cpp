@@ -305,7 +305,7 @@ int main(int argc, char* argv[]){
 
             std::string send;
             for(int i = 0; i < result.size(); i++) {
-                // Format: name|confidence|pixel x offset|pixel y offset|actual distance in z
+                // Format: name|confidence|timestamp|pixel x offset|pixel y offset|actual distance in z
                 // Seperated by | of different data and seperated by \n for different detected objects
                 send += std::string(result[i].object_name) + "|" + std::to_string(result[i].confidence) + "|" + std::to_string(result[i].time) + "|" + std::to_string(result[i].pixel_x_offset) + "|" + std::to_string(result[i].pixel_y_offset) + "|" + std::to_string(result[i].z) + '\n';
             }

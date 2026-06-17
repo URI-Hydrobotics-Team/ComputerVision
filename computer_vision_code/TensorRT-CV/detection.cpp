@@ -522,7 +522,7 @@ std::vector<CV_data> detection::postprocess(std::string obj) {
 
         std::cout << "Object: " << object << " | " << "X offset: " << (final_bounds.x + final_bounds.width / 2) - center_x << " | " << "Y offset: " << center_y - (final_bounds.y + final_bounds.height / 2) << "\n";
 
-        if(object == obj) {
+        if(object == obj || obj == "*") {
             time_t timestamp;
             std::time(&timestamp);
     

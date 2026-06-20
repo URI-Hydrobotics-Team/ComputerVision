@@ -3,12 +3,15 @@
 #include <sys/socket.h>
 #include <netinet/in.h> 
 #include <arpa/inet.h> 
+#include "../AVOE/core/io.h"
 
 // MODIFY THESE DATA TO MATCH BASIC MODE RECEIVER SET UP
 constexpr bool basic = true;
 constexpr const char* dest_ip = "127.0.0.1";
 constexpr uint16_t dest_port = 8000;
 constexpr uint16_t local_port = 8080;
+#define PORT_CORE_INPUT 8101
+#define IP_CORE "10.42.0.69"
 
 class Logger : public ILogger
 {
@@ -258,10 +261,13 @@ int main(int argc, char* argv[]){
 
     cv::Mat frame;
     camera.open(0);
+
+    // initialize avoe_comm_transmitter object to communicate data from CV to AVOE
+    avoe_comm_transmitter CV_to_AVOE("message", "telemetry", PORT_CORE_INPUT, IP_CORE);
     
     char buffer[1024];
     int socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
-    struct sockaddr_in servaddr, clientaddr, senderaddr; 
+    struct sockaddr_in servaddr, clientaddr; 
     socklen_t len;
     ssize_t bytes;
 
@@ -270,6 +276,7 @@ int main(int argc, char* argv[]){
         std::exit(EXIT_FAILURE);
     }
 
+    // Not basic mode
     if(!basic) {
         memset(&servaddr, 0, sizeof(servaddr)); 
         memset(&clientaddr, 0, sizeof(clientaddr)); 
@@ -285,15 +292,13 @@ int main(int argc, char* argv[]){
 
         len = sizeof(clientaddr);
     } else {
-        memset(&senderaddr, 0, sizeof(senderaddr)); 
-        senderaddr.sin_family = AF_INET;
-        senderaddr.sin_addr.s_addr = inet_addr(dest_ip);;
-        senderaddr.sin_port = htons(dest_port);
-        len = sizeof(senderaddr);
+        // transmitter timer set to 300 ms
+        CV_to_AVOE.set_timer(300);
     }
 
     while(true){
         if(basic) {
+            // grab frame and make sure frame is not empty
             camera.read(frame);
             if(frame.empty()) {
                 std::cerr << "Frame is empty\n";
@@ -301,8 +306,10 @@ int main(int argc, char* argv[]){
             }
     
             model.inference(frame);
+            // * means return any detected object
             std::vector<CV_data> result = model.postprocess("*");
 
+            // calculate distance for all detected objects
             for(CV_data &detection : result) {
                 if(argc == 1 || strncmp(argv[1], "naive", 32) == 0) {
                     naive_distance(detection, 3000);
@@ -316,6 +323,7 @@ int main(int argc, char* argv[]){
                 }
             }
 
+            // append all object data together
             std::string send;
             for(int i = 0; i < result.size(); i++) {
                 // Format: name|confidence|timestamp|pixel x offset|pixel y offset|actual distance in z
@@ -323,7 +331,10 @@ int main(int argc, char* argv[]){
                 send += std::string(result[i].object_name) + "|" + std::to_string(result[i].confidence) + "|" + std::to_string(result[i].time) + "|" + std::to_string(result[i].pixel_x_offset) + "|" + std::to_string(result[i].pixel_y_offset) + "|" + std::to_string(result[i].z) + '\n';
             }
 
-            sendto(socket_fd, send.c_str(), send.length(), MSG_CONFIRM, (const struct sockaddr *) &senderaddr, len);         
+            // set message to send
+            CV_to_AVOE.set_message(&send[0], send.length());
+            // transmit the message
+            CV_to_AVOE.refresh();
         } else {
 
             bytes = recvfrom(socket_fd, buffer, 1023, 0, ( struct sockaddr *) &clientaddr, &len);

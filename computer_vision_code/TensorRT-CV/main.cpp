@@ -263,7 +263,7 @@ int main(int argc, char* argv[]){
     camera.open(0);
 
     // initialize avoe_comm_transmitter object to communicate data from CV to AVOE
-    avoe_comm_transmitter CV_to_AVOE("message", "telemetry", PORT_CORE_INPUT, IP_CORE);
+    avoe_comm_transmitter CV_to_AVOE("message", "cv", PORT_CORE_INPUT, IP_CORE);
     
     char buffer[1024];
     int socket_fd = socket(AF_INET, SOCK_DGRAM, 0);

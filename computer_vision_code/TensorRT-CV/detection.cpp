@@ -29,9 +29,6 @@ detection::detection(ILogger* t, std::vector<std::string> object_classes, int in
         cudaMalloc((void **)&output_ptr_half, output_channel * output_dim1 * output_dim2 * data_size);
         // since we will need a new memory to store the float32 value converted from the float16 value later, we will allocate it now
         cudaMalloc((void **)&output_ptr_final, output_channel * output_dim1 * output_dim2 * sizeof(float));
-
-        static cv::cuda::HostMem pinned_host_mem(1 * 3 * 640 * 640 * 2, cv::cuda::HostMem::AllocType::PAGE_LOCKED);
-        some = pinned_host_mem.createMatHeader();
     }
 
     else{
@@ -244,14 +241,6 @@ void detection::convert_onnx(std::string onnx_model_path){
     reshape_index_layer->setReshapeDimensions(Dims{1, {30}});
     ITensor* valid_index = reshape_index_layer->getOutput(0);
 
-    // make sure all the indicies in box_indicies are at least 0
-//    int zero = 0;
-//    Weights zeros{DataType::kINT32, &zero, 1};
-//    IConstantLayer* zero_constant_layer = network->addConstant(Dims{1, {1}}, zeros);
-//    ITensor* zero_output = zero_constant_layer->getOutput(0);
-//    IElementWiseLayer* clap_layer = network->addElementWise(*valid_index, *zero_output, ElementWiseOperation::kMAX);
-//    ITensor* clamp_output = clap_layer->getOutput(0);
-
     // get the valid boxes
     IGatherLayer* valid_box_layer = network->addGatherV2(*box_init, *valid_index, GatherMode::kDEFAULT);
     valid_box_layer->setGatherAxis(1);
@@ -396,16 +385,6 @@ cv::Mat detection::preprocess(cv::Mat frame){
     // converts frame into NCHW format
     // TODO: Implement a CUDA kernel to do this instead of using the blobFromImage function
         // cv::dnn::blobFromImage(frame, blob, 1.0 / 255.0, cv::Size(input_size, input_size), cv::Scalar(), true, false);
-
-    cv::dnn::Image2BlobParams blob_param;
-
-    blob_param.datalayout = cv::dnn::DNN_LAYOUT_NCHW;
-    blob_param.ddepth = CV_32F;
-    blob_param.mean = cv::Scalar();
-    blob_param.paddingmode = cv::dnn::DNN_PMODE_LETTERBOX;
-    blob_param.scalefactor = 1.0 / 255.0;
-    blob_param.size = cv::Size(640, 640);
-    blob_param.swapRB = true;
 
     blob = cv::dnn::blobFromImageWithParams(frame, blob_param);
 

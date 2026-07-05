@@ -310,15 +310,19 @@ int main(int argc, char* argv[]){
             std::vector<CV_data> result = model.postprocess("*");
 
             // calculate distance for all detected objects
-            for(CV_data &detection : result) {
-                if(argc == 1 || strncmp(argv[1], "naive", 32) == 0) {
-                    naive_distance(detection, 3000);
-                } else {
-                    std::string obj(detection.object_name);
-                    if(obj == "Slalom") {
+            // Only do so if another argument was passed in
+            // Else do not do distance calculation
+            if(argc == 2) {
+                for(CV_data &detection : result) {
+                    if(strncmp(argv[1], "naive", 32) == 0) {
                         naive_distance(detection, 3000);
                     } else {
-                        PnP_distance(detection, frame, obj);
+                        std::string obj(detection.object_name);
+                        if(obj == "Slalom") {
+                            naive_distance(detection, 3000);
+                        } else {
+                            PnP_distance(detection, frame, obj);
+                        }
                     }
                 }
             }

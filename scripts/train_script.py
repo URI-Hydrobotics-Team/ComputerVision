@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 1.Install ultralytics to access YOLO models
 """

@@ -91,6 +91,9 @@ detection::detection(ILogger* t, std::vector<std::string> object_classes, int in
         blob_param.scalefactor = 1.0 / 255.0;
         blob_param.size = cv::Size(640, 640);
         blob_param.swapRB = true;
+
+        dummy = new int[30 * 3]{0};
+        num_per_class_ptr = new int(10);
     }
 }
 
@@ -169,8 +172,7 @@ void detection::convert_onnx(std::string onnx_model_path){
 
     std::cout << "\n";
 
-    int num = 10;
-    Weights num_per_class{DataType::kINT32, &num, 1};
+    Weights num_per_class{DataType::kINT32, num_per_class_ptr, 1};
     ITensor* max_output_per_class = network->addConstant(Dims{}, num_per_class)->getOutput(0);
 
     // add nms layer into the model
@@ -209,7 +211,6 @@ void detection::convert_onnx(std::string onnx_model_path){
 
     // pad the output to always be at least 30 element
     // to prevent negative row dimensions
-    int dummy[30 * 3] = {0};
     Weights dummy_vals{DataType::kINT32, dummy, 30 * 3};
 
     IConstantLayer* dummy_layer = network->addConstant(Dims2{30, 3}, dummy_vals);
@@ -334,6 +335,8 @@ void detection::build_engine(std::string onnx_file, std::string filename){
 
     // delete the engine model object
     delete serializedModel;
+    delete dummy;
+    delete num_per_class_ptr;
 }
 
 std::vector<char> detection::readModelFromFile(std::string engine_path){
@@ -510,13 +513,13 @@ std::vector<CV_data> detection::postprocess(std::string obj) {
         
         
         // For testing purpose only, it displays the current frame with CV labels
-        // cv::rectangle(cpu_frame, final_bounds, cv::Scalar(0, 0, 0), 3); // Draw the bounding box
-        // std::string info = object + ": ";
-        // info += std::to_string(max_conf);
-        // cv::putText(cpu_frame, info, cv::Point(final_bounds.x, final_bounds.y), cv::FONT_HERSHEY_SIMPLEX, 0.25, cv::Scalar(0, 255, 255)); // Put text
+        cv::rectangle(cpu_frame, final_bounds, cv::Scalar(0, 0, 0), 3); // Draw the bounding box
+        std::string info = object + ": ";
+        info += std::to_string(max_conf);
+        cv::putText(cpu_frame, info, cv::Point(final_bounds.x, final_bounds.y), cv::FONT_HERSHEY_SIMPLEX, 0.25, cv::Scalar(0, 255, 255)); // Put text
 
-        // cv::imshow("Pic", cpu_frame);
-        // cv::waitKey(100);
+        cv::imshow("Pic", cpu_frame);
+        cv::waitKey(100);
     }
     
     return result;

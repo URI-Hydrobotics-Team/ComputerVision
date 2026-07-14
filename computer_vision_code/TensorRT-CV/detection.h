@@ -105,6 +105,9 @@ class detection{
             }
         };
 
+        int* num_per_class_ptr;
+        int* dummy;
+
         // Used to capture errors
         ILogger* logger;
         // model path of the onnx model

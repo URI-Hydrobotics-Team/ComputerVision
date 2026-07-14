@@ -513,13 +513,13 @@ std::vector<CV_data> detection::postprocess(std::string obj) {
         
         
         // For testing purpose only, it displays the current frame with CV labels
-        cv::rectangle(cpu_frame, final_bounds, cv::Scalar(0, 0, 0), 3); // Draw the bounding box
-        std::string info = object + ": ";
-        info += std::to_string(max_conf);
-        cv::putText(cpu_frame, info, cv::Point(final_bounds.x, final_bounds.y), cv::FONT_HERSHEY_SIMPLEX, 0.25, cv::Scalar(0, 255, 255)); // Put text
+        // cv::rectangle(cpu_frame, final_bounds, cv::Scalar(0, 0, 0), 3); // Draw the bounding box
+        // std::string info = object + ": ";
+        // info += std::to_string(max_conf);
+        // cv::putText(cpu_frame, info, cv::Point(final_bounds.x, final_bounds.y), cv::FONT_HERSHEY_SIMPLEX, 0.25, cv::Scalar(0, 255, 255)); // Put text
 
-        cv::imshow("Pic", cpu_frame);
-        cv::waitKey(100);
+        // cv::imshow("Pic", cpu_frame);
+        // cv::waitKey(100);
     }
     
     return result;

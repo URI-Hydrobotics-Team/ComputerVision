@@ -383,7 +383,7 @@ void detection::load_model(std::string engine_path){
 cv::Mat detection::preprocess(cv::Mat frame){
     cv::Mat blob;
     cpu_frame = frame;
-    std::cout << frame.rows << " " << frame.cols << "\n";
+    // std::cout << frame.rows << " " << frame.cols << "\n";
 
     // converts frame into NCHW format
     // TODO: Implement a CUDA kernel to do this instead of using the blobFromImage function
@@ -492,6 +492,7 @@ std::vector<CV_data> detection::postprocess(std::string obj) {
 
     cudaStreamSynchronize(stream);
 
+    cv::Mat temp_frame = cpu_frame.clone();
     for(int i = 0; i < num_output1; i++) {
         float x = final_boxes1[i * 4], y = final_boxes1[i * 4 + 1], width = final_boxes1[i * 4 + 2], height = final_boxes1[i * 4 + 3];
         cv::Rect2d bounds = cv::Rect2d((x - (width / 2)), (y - (height / 2)), width, height);
@@ -513,14 +514,14 @@ std::vector<CV_data> detection::postprocess(std::string obj) {
         
         
         // For testing purpose only, it displays the current frame with CV labels
-        // cv::rectangle(cpu_frame, final_bounds, cv::Scalar(0, 0, 0), 3); // Draw the bounding box
-        // std::string info = object + ": ";
-        // info += std::to_string(max_conf);
-        // cv::putText(cpu_frame, info, cv::Point(final_bounds.x, final_bounds.y), cv::FONT_HERSHEY_SIMPLEX, 0.25, cv::Scalar(0, 255, 255)); // Put text
-
-        // cv::imshow("Pic", cpu_frame);
-        // cv::waitKey(100);
+        cv::rectangle(temp_frame, final_bounds, cv::Scalar(0, 0, 0), 3); // Draw the bounding box
+        std::string info = object + ": ";
+        info += std::to_string(max_conf);
+        cv::putText(temp_frame, info, cv::Point(final_bounds.x, final_bounds.y), cv::FONT_HERSHEY_SIMPLEX, 0.25, cv::Scalar(0, 255, 255)); // Put text
     }
+
+    cv::imshow("Pic", temp_frame);
+    cv::waitKey(100);
     
     return result;
 }

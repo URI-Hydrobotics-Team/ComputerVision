@@ -3,7 +3,9 @@
 #include <sys/socket.h>
 #include <netinet/in.h> 
 #include <arpa/inet.h> 
-#include "../AVOE/core/io.h"
+#include <filesystem>
+// modify to correct AVOE directory path
+#include "../../../AVOE/core/io.h"
 
 // MODIFY THESE DATA TO MATCH BASIC MODE RECEIVER SET UP
 constexpr bool basic = true;
@@ -226,11 +228,112 @@ int main(int argc, char* argv[]){
     std::vector<std::string> object_classes = { "person", "bicycle", "car", "motorbike", "aeroplane", "bus", "train", "truck", "boat", "traffic light", "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove", "skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "sofa", "pottedplant", "bed", "diningtable", "toilet", "tvmonitor", "laptop", "mouse", "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush" };
     detection model(&logger, object_classes, 640, 1, 84, 8400, 32);
 
+    // test
+    if(argc == 4 && strncmp(argv[1], "test", 32) == 0) {
+        std::filesystem::path correct_path(argv[3]);
+        std::string actual_path = argv[3];
+        if(correct_path.is_relative()) {
+            actual_path = "../" + correct_path.string();
+        }
+
+        model.load_model(actual_path);
+        // initialize avoe_comm_transmitter object to communicate data from CV to AVOE
+        avoe_comm_transmitter CV_to_AVOE("message", "cv", PORT_CORE_INPUT, IP_CORE);
+        CV_to_AVOE.set_timer(300);
+        cv::Mat frame;
+        
+        if(strncmp(argv[2], "image", 32) == 0) {
+            frame = cv::imread("../test_data/dog_img.jpg");
+
+            while(true) {
+                if(frame.empty()) {
+                    std::cerr << "Frame is empty\n";
+                    std::exit(EXIT_FAILURE);
+                }
+        
+                model.inference(frame);
+
+                // * means return any detected object
+                std::vector<CV_data> result = model.postprocess("*");
+
+                // append all object data together
+                std::string send;
+                std::ostringstream oss;
+                for(int i = 0; i < result.size(); i++) {
+                    // Format: name|confidence|timestamp|pixel x offset|pixel y offset|actual distance in z
+                    // Seperated by | of different data and seperated by \n for different detected objects
+                    oss << std::fixed << std::setprecision(2) 
+                    << std::string(result[i].object_name) << "|" 
+                    << std::to_string(result[i].confidence) << "|" 
+                    << std::to_string(result[i].time) << "|" 
+                    << std::to_string(result[i].pixel_x_offset) << "|" 
+                    << std::to_string(result[i].pixel_y_offset) << "|" 
+                    << std::to_string(result[i].z) << '\n';
+                }
+
+                // set message to send
+                send = oss.str();
+                CV_to_AVOE.set_message(send.data(), send.length());
+                // // transmit the message
+                CV_to_AVOE.refresh();
+            }
+        }
+        // if(strncmp(argv[2], "video", 32) == 0) {
+        //     cv::VideoCapture camera;
+        //     camera.open("../model_building/testing.mp4");
+
+        //     while(true) {
+        //         camera.read(frame);
+        //         if(frame.empty()) {
+        //             std::cerr << "Frame is empty\n";
+        //             std::exit(EXIT_FAILURE);
+        //         }
+        
+        //         model.inference(frame);
+
+        //         // * means return any detected object
+        //         std::vector<CV_data> result = model.postprocess("*");
+
+        //         // append all object data together
+        //         std::string send;
+        //         std::ostringstream oss;
+        //         for(int i = 0; i < result.size(); i++) {
+        //             // Format: name|confidence|timestamp|pixel x offset|pixel y offset|actual distance in z
+        //             // Seperated by | of different data and seperated by \n for different detected objects
+        //             oss << std::fixed << std::setprecision(2) 
+        //             << std::string(result[i].object_name) << "|" 
+        //             << std::to_string(result[i].confidence) << "|" 
+        //             << std::to_string(result[i].time) << "|" 
+        //             << std::to_string(result[i].pixel_x_offset) << "|" 
+        //             << std::to_string(result[i].pixel_y_offset) << "|" 
+        //             << std::to_string(result[i].z) << '\n';
+        //         }
+
+        //         // set message to send
+        //         send = oss.str();
+        //         std::cout << send;
+        //         // CV_to_AVOE.set_message(&send[0], send.length());
+        //         // // transmit the message
+        //         // CV_to_AVOE.refresh();
+        //     }
+        // }
+    }
+
 
     // This line is used to build an engine file
     if(argc == 4 && strncmp(argv[1], "build", 32) == 0) {
+        std::filesystem::path temp_onnx_path(argv[2]);
         std::string onnx_path = argv[2];
+        if(temp_onnx_path.is_relative()) {
+            onnx_path = "../" + temp_onnx_path.string();
+        }
+
+        std::filesystem::path temp_dest_path(argv[3]);
         std::string dest_path = argv[3];
+        if(temp_dest_path.is_relative()) {
+            dest_path = "../" + temp_dest_path.string();
+        }
+
         model.build_engine(onnx_path, dest_path);
         std::cout << "Model build successful, path is: " << dest_path << "\n";
         return EXIT_SUCCESS;
@@ -329,6 +432,7 @@ int main(int argc, char* argv[]){
 
             // append all object data together
             std::string send;
+            
             for(int i = 0; i < result.size(); i++) {
                 // Format: name|confidence|timestamp|pixel x offset|pixel y offset|actual distance in z
                 // Seperated by | of different data and seperated by \n for different detected objects

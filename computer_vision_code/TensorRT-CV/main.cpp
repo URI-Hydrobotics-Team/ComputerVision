@@ -259,21 +259,26 @@ int main(int argc, char* argv[]){
                 // append all object data together
                 std::string send;
                 std::ostringstream oss;
+                oss << std::fixed << std::setprecision(2);
                 for(int i = 0; i < result.size(); i++) {
                     // Format: name|confidence|timestamp|pixel x offset|pixel y offset|actual distance in z
                     // Seperated by | of different data and seperated by \n for different detected objects
-                    oss << std::fixed << std::setprecision(2) 
-                    << std::string(result[i].object_name) << "|" 
-                    << std::to_string(result[i].confidence) << "|" 
-                    << std::to_string(result[i].time) << "|" 
-                    << std::to_string(result[i].pixel_x_offset) << "|" 
-                    << std::to_string(result[i].pixel_y_offset) << "|" 
-                    << std::to_string(result[i].z) << '\n';
+                    oss << result[i].object_name << "|" 
+                    << result[i].confidence << "|" 
+                    << result[i].time << "|" 
+                    << result[i].pixel_x_offset << "|" 
+                    << result[i].pixel_y_offset << "|" 
+                    << result[i].z << '\n';
                 }
 
                 // set message to send
                 send = oss.str();
-                CV_to_AVOE.set_message(send.data(), send.length());
+
+                char *mptr = new char[send.length() + 1];
+                std::memcpy(mptr, send.data(), send.length());
+                mptr[send.length()] = '\0';
+                // std::cout << send;
+                CV_to_AVOE.set_message(mptr, send.length());
                 // // transmit the message
                 CV_to_AVOE.refresh();
             }

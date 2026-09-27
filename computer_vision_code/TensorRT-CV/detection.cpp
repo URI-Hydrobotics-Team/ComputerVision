@@ -421,25 +421,22 @@ void detection::inference(cv::Mat frame){
     // preprocess the frame before inference
     input = preprocess(frame);
 
-    // if the model is a fp16 model, convert frame to FP16 data type
-    if(data_size == 2){
-        input.convertTo(some, CV_16F);
-        cudaMemcpyAsync(input_ptr_half, some.data, some.total() * some.elemSize(), cudaMemcpyHostToDevice, stream);
-        context->setTensorAddress("images", input_ptr_half);
-        context->setTensorAddress("output0", output_ptr_half);
-    }
-    else{
+    // convert frame to FP16 data type
+    if(input.isContinuous()) {
         some = input;
-        // load frame data into gpu
-        cudaMemcpyAsync(input_ptr, some.data, some.total() * some.elemSize(), cudaMemcpyHostToDevice, stream);
-        context->setTensorAddress("images", input_ptr);
-        context->setTensorAddress("confidence", prob);
-        context->setTensorAddress("IoU", IoU);
-        context->setTensorAddress("confidences", conf);
-        context->setTensorAddress("box", boxes);
-        context->setTensorAddress("counts", index_count);
-        context->setTensorAddress("class", classes);
+    } else {
+        some = input.clone();
     }
+
+    // load frame data into gpu
+    cudaMemcpyAsync(input_ptr, some.data, some.total() * some.elemSize(), cudaMemcpyHostToDevice, stream);
+    assert(context->setTensorAddress("images", input_ptr));
+    assert(context->setTensorAddress("confidence", prob));
+    assert(context->setTensorAddress("IoU", IoU));
+    assert(context->setTensorAddress("confidences", conf));
+    assert(context->setTensorAddress("box", boxes));
+    assert(context->setTensorAddress("counts", index_count));
+    assert(context->setTensorAddress("class", classes));
 
     // some assertion to make sure things go correctly
     assert(some.data != nullptr);

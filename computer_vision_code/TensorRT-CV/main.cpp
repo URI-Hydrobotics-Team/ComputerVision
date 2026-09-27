@@ -12,8 +12,8 @@ constexpr bool basic = true;
 constexpr const char* dest_ip = "127.0.0.1";
 constexpr uint16_t dest_port = 8000;
 constexpr uint16_t local_port = 8080;
-#define PORT_CORE_INPUT 8101
-#define IP_CORE "10.42.0.69"
+#define PORT_CORE_INPUT 9000
+#define IP_CORE "127.0.0.1"
 
 class Logger : public ILogger
 {
@@ -240,11 +240,9 @@ int main(int argc, char* argv[]){
         // initialize avoe_comm_transmitter object to communicate data from CV to AVOE
         avoe_comm_transmitter CV_to_AVOE("message", "cv", PORT_CORE_INPUT, IP_CORE);
         CV_to_AVOE.set_timer(300);
-        cv::Mat frame;
+        cv::Mat frame = cv::imread("../test_data/dog_img.jpg");
         
         if(strncmp(argv[2], "image", 32) == 0) {
-            frame = cv::imread("../test_data/dog_img.jpg");
-
             while(true) {
                 if(frame.empty()) {
                     std::cerr << "Frame is empty\n";
@@ -257,7 +255,6 @@ int main(int argc, char* argv[]){
                 std::vector<CV_data> result = model.postprocess("*");
 
                 // append all object data together
-                std::string send;
                 std::ostringstream oss;
                 oss << std::fixed << std::setprecision(2);
                 for(int i = 0; i < result.size(); i++) {
@@ -272,15 +269,11 @@ int main(int argc, char* argv[]){
                 }
 
                 // set message to send
-                send = oss.str();
-
-                char *mptr = new char[send.length() + 1];
-                std::memcpy(mptr, send.data(), send.length());
-                mptr[send.length()] = '\0';
-                // std::cout << send;
-                CV_to_AVOE.set_message(mptr, send.length());
-                // // transmit the message
+                std::string send = oss.str();
+                CV_to_AVOE.set_message(send.data(), send.length());
+                // transmit the message
                 CV_to_AVOE.refresh();
+
             }
         }
         // if(strncmp(argv[2], "video", 32) == 0) {

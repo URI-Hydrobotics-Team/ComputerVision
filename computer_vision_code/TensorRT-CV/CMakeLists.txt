@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.10)
 project(Detection LANGUAGES CXX CUDA)
 
+# add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+# add_link_options(-fsanitize=address,undefined)
+
 # Find OpenCV and TensorRT
 find_package(OpenCV REQUIRED)
 # set(TENSORRT_INCLUDE_DIRS

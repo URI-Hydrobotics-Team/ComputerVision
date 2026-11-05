@@ -12,11 +12,13 @@
 // unified result class
 class detection_result {
     public:
-        detection_result(cv::Point box, float confidence, std::string object_class, time_t timestamp);
-        cv::Point box;
+        detection_result(cv::Point offset, float confidence, std::string object_class, float angle, time_t timestamp, cv::Rect box);
+        cv::Point offset;
         float confidence;
         std::string object_class;
+        float angle;
         time_t timestamp;
+        cv::Rect box;
 };
 
 // main cv class
@@ -37,6 +39,19 @@ class main_cv_class  {
 class default_cv : public main_cv_class {
     public:
         default_cv(std::string model_path, std::vector<std::string> object_classes, int input_size, int output_channel, int output_dim1, int output_dim2, float conf_threshold);        
+        cv::Mat preprocess(cv::Mat frame) override;
+        std::vector<cv::Mat> inference(cv::Mat blob) override;
+        std::vector<detection_result> postprocess(std::vector<cv::Mat> result, bool nms = false) override;
+    private:
+        int input_size, output_channel, output_dim1, output_dim2;
+        float threshold;
+        cv::Mat frame_cpy;
+        cv::dnn::Image2BlobParams blob_param;
+};
+
+class obb_cv : public main_cv_class {
+    public:
+        obb_cv(std::string model_path, std::vector<std::string> object_classes, int input_size, int output_channel, int output_dim1, int output_dim2, float conf_threshold);        
         cv::Mat preprocess(cv::Mat frame) override;
         std::vector<cv::Mat> inference(cv::Mat blob) override;
         std::vector<detection_result> postprocess(std::vector<cv::Mat> result, bool nms = false) override;

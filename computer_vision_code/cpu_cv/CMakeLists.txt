@@ -4,6 +4,7 @@ add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
 add_link_options(-fsanitize=address,undefined)
 
 # Find OpenCV and TensorRT
+set(OpenCV_DIR "/opt/opencv5/lib/cmake/opencv5")
 find_package(OpenCV REQUIRED)
 
 # change it to the correct AVOE directory

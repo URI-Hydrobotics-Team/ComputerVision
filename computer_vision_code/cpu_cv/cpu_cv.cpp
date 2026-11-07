@@ -22,11 +22,11 @@ default_cv::default_cv(std::string model_path, std::vector<std::string> object_c
     threshold = conf_threshold;
 
     // parameters for preprocessing the frame
-    blob_param.datalayout = cv::dnn::DNN_LAYOUT_NCHW;
+    blob_param.datalayout = cv::DNN_LAYOUT_NCHW;
     blob_param.ddepth = CV_32F;
-    blob_param.mean = cv::Scalar();
+    blob_param.mean = cv::Scalar(0, 0, 0);
     blob_param.paddingmode = cv::dnn::DNN_PMODE_LETTERBOX;
-    blob_param.scalefactor = 1.0 / 255.0;
+    blob_param.scalefactor = cv::Scalar(1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0);
     blob_param.size = cv::Size(640, 640);
     blob_param.swapRB = true;
 }      
@@ -56,6 +56,7 @@ std::vector<detection_result> default_cv::postprocess(std::vector<cv::Mat> resul
     int center_y = frame_cpy.rows / 2;
 
     if(nms) {
+        result[0] = result[0].reshape(0, dimension);
         for(int i = 0; i < dimension; i++) {
             float* cur_row_ptr = result[0].ptr<float>(i);
             float cur_threshold = cur_row_ptr[4];
@@ -63,14 +64,14 @@ std::vector<detection_result> default_cv::postprocess(std::vector<cv::Mat> resul
                 break;
             }
 
-            // make rectangle based on points (cx, cy), (w, h)
+            // make rectangle based on points (top left x, top left y), (bottom right x, bottom right y)
             cv::Rect bounds = cv::Rect(cv::Point2i(cur_row_ptr[0], cur_row_ptr[1]), cv::Point2i(cur_row_ptr[2], cur_row_ptr[3]));
             cv::Rect final_bounds = blob_param.blobRectToImageRect(bounds, cv::Size(frame_cpy.cols, frame_cpy.rows));
 
             time_t timestamp;
             std::time(&timestamp);
 
-            final_result.push_back(detection_result(cv::Point((final_bounds.x + final_bounds.width / 2) - center_x, center_y - (final_bounds.y + final_bounds.height / 2)), cur_threshold, object_classes[cur_row_ptr[5]], 0, timestamp, final_bounds));
+            final_result.push_back(detection_result(cv::Point((final_bounds.x + final_bounds.width / 2) - center_x, center_y - (final_bounds.y + final_bounds.height / 2)), cur_threshold, object_classes[int(cur_row_ptr[5])], 0, timestamp, final_bounds));
         }
     } else {
         std::vector<std::string> detected_object;
@@ -92,8 +93,8 @@ std::vector<detection_result> default_cv::postprocess(std::vector<cv::Mat> resul
             //Find the class with the highest probability of a specific detection
             cv::minMaxLoc(access_row.colRange(4, dimension), nullptr, &max_conf, nullptr, &conf_indx);
 
-            //If the probability is greater than or equal to 0.4, append all the data into the vectors 
-            if (max_conf >= 0.4) {
+            //If the probability is greater than or equal to threshold, append all the data into the vectors 
+            if (max_conf >= threshold) {
                 float* row_data = access_row.ptr<float>(0);
                 float obj_center_x = row_data[0];
                 float obj_center_y = row_data[1];
@@ -144,13 +145,14 @@ obb_cv::obb_cv(std::string model_path, std::vector<std::string> object_classes, 
     threshold = conf_threshold;
 
     // parameters for preprocessing the frame
-    blob_param.datalayout = cv::dnn::DNN_LAYOUT_NCHW;
+    blob_param.datalayout = cv::DNN_LAYOUT_NCHW;
     blob_param.ddepth = CV_32F;
-    blob_param.mean = cv::Scalar();
+    blob_param.mean = cv::Scalar(0, 0, 0);
     blob_param.paddingmode = cv::dnn::DNN_PMODE_LETTERBOX;
-    blob_param.scalefactor = 1.0 / 255.0;
-    blob_param.size = cv::Size(640, 640);
+    blob_param.scalefactor = cv::Scalar(1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0);
+    blob_param.size = cv::Size(input_size, input_size);
     blob_param.swapRB = true;
+    blob_param.borderValue = cv::Scalar(114, 114, 114);
 }      
 
 cv::Mat obb_cv::preprocess(cv::Mat frame) {
@@ -178,13 +180,14 @@ std::vector<detection_result> obb_cv::postprocess(std::vector<cv::Mat> result, b
     int center_y = frame_cpy.rows / 2;
 
     if(nms) {
+        result[0] = result[0].reshape(0, dimension);
         for(int i = 0; i < dimension; i++) {
             float* cur_row_ptr = result[0].ptr<float>(i);
             float cur_threshold = cur_row_ptr[5];
             if(cur_threshold < threshold)  {
                 break;
             }
-
+            
             cv::Rect bounds = cv::Rect(cv::Point2i(cur_row_ptr[0], cur_row_ptr[1]), cv::Point2i(cur_row_ptr[2], cur_row_ptr[3]));
             cv::Rect final_bounds = blob_param.blobRectToImageRect(bounds, cv::Size(frame_cpy.cols, frame_cpy.rows));
 
@@ -214,19 +217,20 @@ std::vector<detection_result> obb_cv::postprocess(std::vector<cv::Mat> result, b
             access_row = transposed.row(i);
 
             //Find the class with the highest probability of a specific detection
-            cv::minMaxLoc(access_row.colRange(5, dimension), nullptr, &max_conf, nullptr, &conf_indx);
+            cv::minMaxLoc(access_row.colRange(4, dimension - 1), nullptr, &max_conf, nullptr, &conf_indx);
 
             //If the probability is greater than or equal to 0.4, append all the data into the vectors 
-            if (max_conf >= 0.4) {
+            if (max_conf >= threshold) {
                 float* row_data = access_row.ptr<float>(0);
                 float obj_center_x = row_data[0];
                 float obj_center_y = row_data[1];
                 float width = row_data[2];
                 float height = row_data[3];
-                float angle = row_data[4];
+                float angle = row_data[dimension - 1];
                 int id = conf_indx.x;
 
-                cv::Rect bounds = cv::Rect(obj_center_x, obj_center_y, width, height);
+                // std::cout << obj_center_x << " " << obj_center_y << " " << width << " " << height << " " << angle << " " << id << " " << max_conf << "\n";
+                cv::Rect bounds = cv::Rect((obj_center_x - (width / 2)), (obj_center_y - (height / 2)), width, height);
                 cv::Rect final_bounds = blob_param.blobRectToImageRect(bounds, cv::Size(frame_cpy.cols, frame_cpy.rows));
 
                 bounding_box.push_back(final_bounds);
